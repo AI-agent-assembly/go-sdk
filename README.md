@@ -45,3 +45,12 @@ func main() {
 - `make fmt`
 - `make lint`
 - `make test`
+
+## SonarQube CI Setup
+
+Configure these repository settings for the `SonarQube` workflow:
+
+- Secret: `SONAR_TOKEN`
+- Variable: `SONAR_HOST_URL` (for SonarCloud use `https://sonarcloud.io`)
+- Variable: `SONAR_PROJECT_KEY`
+- Variable: `SONAR_ORGANIZATION` (required for SonarCloud, optional for self-hosted SonarQube)
