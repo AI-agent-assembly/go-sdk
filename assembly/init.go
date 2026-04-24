@@ -1,3 +1,4 @@
+// Package assembly provides Go SDK bootstrap and interception primitives.
 package assembly
 
 import (
