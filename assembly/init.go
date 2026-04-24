@@ -6,3 +6,9 @@ type Config struct {
 	APIKey         string
 	SidecarAddress string
 }
+
+// InitAssembly initializes the SDK runtime.
+func InitAssembly(cfg Config) error {
+	_ = cfg
+	return nil
+}
