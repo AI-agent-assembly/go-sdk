@@ -1,0 +1,9 @@
+version: 2
+
+project_name: go-sdk
+
+source:
+  enabled: true
+
+builds:
+  - skip: true
