@@ -25,5 +25,8 @@ jobs:
         with:
           go-version: ${{ matrix.go-version }}
 
+      - name: Resolve modules
+        run: go mod tidy
+
       - name: Run tests
         run: go test ./...
