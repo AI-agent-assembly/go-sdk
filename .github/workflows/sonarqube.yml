@@ -1,0 +1,70 @@
+name: SonarQube
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  sonarqube:
+    runs-on: ubuntu-latest
+    env:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
+      SONAR_PROJECT_KEY: ${{ vars.SONAR_PROJECT_KEY }}
+      SONAR_ORGANIZATION: ${{ vars.SONAR_ORGANIZATION }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          submodules: recursive
+
+      - name: Setup Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        with:
+          go-version: "1.23.x"
+
+      - name: Resolve modules
+        run: go mod tidy
+
+      - name: Run tests with coverage
+        run: go test ./... -covermode=atomic -coverprofile=coverage.out
+
+      - name: Build Sonar scanner arguments
+        if: ${{ env.SONAR_TOKEN != '' && env.SONAR_HOST_URL != '' && env.SONAR_PROJECT_KEY != '' }}
+        run: |
+          scanner_args="-Dsonar.projectKey=${SONAR_PROJECT_KEY} -Dsonar.go.coverage.reportPaths=coverage.out -Dsonar.test.inclusions=**/*_test.go"
+          if [ -n "${SONAR_ORGANIZATION}" ]; then
+            scanner_args="${scanner_args} -Dsonar.organization=${SONAR_ORGANIZATION}"
+          fi
+          echo "SONAR_SCANNER_ARGS=${scanner_args}" >> "${GITHUB_ENV}"
+
+      - name: Run SonarQube scan
+        if: ${{ env.SONAR_TOKEN != '' && env.SONAR_HOST_URL != '' && env.SONAR_PROJECT_KEY != '' }}
+        uses: SonarSource/sonarqube-scan-action@299e4b793aaa83bf2aba7c9c14bedbb485688ec4 # v7.1.0
+        env:
+          SONAR_TOKEN: ${{ env.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ env.SONAR_HOST_URL }}
+        with:
+          args: ${{ env.SONAR_SCANNER_ARGS }}
+
+      - name: Check SonarQube quality gate
+        if: ${{ env.SONAR_TOKEN != '' && env.SONAR_HOST_URL != '' && env.SONAR_PROJECT_KEY != '' }}
+        uses: SonarSource/sonarqube-quality-gate-action@cf038b0e0cdecfa9e56c198bbb7d21d751d62c3b # v1.2.0
+        timeout-minutes: 5
+        env:
+          SONAR_TOKEN: ${{ env.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ env.SONAR_HOST_URL }}
+        with:
+          scanMetadataReportFile: .scannerwork/report-task.txt
+          pollingTimeoutSec: 300
+
+      - name: Skip SonarQube scan when config is missing
+        if: ${{ env.SONAR_TOKEN == '' || env.SONAR_HOST_URL == '' || env.SONAR_PROJECT_KEY == '' }}
+        run: echo "Skipping SonarQube scan. Configure SONAR_TOKEN secret and SONAR_HOST_URL / SONAR_PROJECT_KEY repository variables."
