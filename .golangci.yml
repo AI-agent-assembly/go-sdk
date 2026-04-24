@@ -9,6 +9,3 @@ linters:
     - govet
     - staticcheck
     - revive
-
-issues:
-  exclude-use-default: false
