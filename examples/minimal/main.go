@@ -1,3 +1,4 @@
+// Package main shows a minimal go-sdk bootstrap example.
 package main
 
 import (
