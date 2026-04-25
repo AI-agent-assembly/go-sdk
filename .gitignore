@@ -1,0 +1,21 @@
+# Binaries
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binaries
+*.test
+
+# Coverage
+*.out
+coverage.txt
+
+# IDE files
+.vscode/
+.idea/
+
+# macOS
+.DS_Store

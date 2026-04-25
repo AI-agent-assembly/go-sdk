@@ -1,0 +1,6 @@
+# Default code owner for this repository.
+# Notes:
+# - All files route review to @Chisanan232 unless a more specific rule is added below.
+# - Add path-specific ownership rules above the wildcard to override this default.
+# - Keep CODEOWNERS aligned with branch protection required reviewers.
+* @Chisanan232
