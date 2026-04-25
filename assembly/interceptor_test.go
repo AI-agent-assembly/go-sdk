@@ -60,9 +60,9 @@ func TestUnaryClientInterceptor(t *testing.T) {
 		func(
 			ctx context.Context,
 			method string,
-			req, reply any,
-			cc *grpc.ClientConn,
-			opts ...grpc.CallOption,
+			_, _ any,
+			_ *grpc.ClientConn,
+			_ ...grpc.CallOption,
 		) error {
 			invoked = true
 			if ctx == nil {
@@ -98,9 +98,9 @@ func TestStreamClientInterceptor(t *testing.T) {
 		func(
 			ctx context.Context,
 			desc *grpc.StreamDesc,
-			cc *grpc.ClientConn,
+			_ *grpc.ClientConn,
 			method string,
-			opts ...grpc.CallOption,
+			_ ...grpc.CallOption,
 		) (grpc.ClientStream, error) {
 			streamed = true
 			if ctx == nil {
