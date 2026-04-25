@@ -39,7 +39,7 @@ jobs:
       - name: Build Sonar scanner arguments
         if: ${{ env.SONAR_TOKEN != '' && env.SONAR_HOST_URL != '' && env.SONAR_PROJECT_KEY != '' }}
         run: |
-          scanner_args="-Dsonar.projectKey=${SONAR_PROJECT_KEY} -Dsonar.go.coverage.reportPaths=coverage.out -Dsonar.test.inclusions=**/*_test.go"
+          scanner_args="-Dsonar.projectKey=${SONAR_PROJECT_KEY} -Dsonar.go.coverage.reportPaths=coverage.out -Dsonar.test.inclusions=**/*_test.go -Dsonar.coverage.exclusions=examples/**"
           if [ -n "${SONAR_ORGANIZATION}" ]; then
             scanner_args="${scanner_args} -Dsonar.organization=${SONAR_ORGANIZATION}"
           fi
