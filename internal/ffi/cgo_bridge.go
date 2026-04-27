@@ -41,7 +41,7 @@ func (cgoBridge) sendEvent(handle unsafe.Pointer, eventJSON string) int32 {
 	return int32(status)
 }
 
-func (cgoBridge) queryPolicy(handle unsafe.Pointer, queryJSON string) (string, int32) {
+func (b cgoBridge) queryPolicy(handle unsafe.Pointer, queryJSON string) (string, int32) {
 	cQueryJSON := C.CString(queryJSON)
 	defer C.free(unsafe.Pointer(cQueryJSON))
 
@@ -50,6 +50,8 @@ func (cgoBridge) queryPolicy(handle unsafe.Pointer, queryJSON string) (string, i
 	if status != 0 || out == nil {
 		return "", int32(status)
 	}
+
+	defer b.freeString(out)
 
 	return C.GoString(out), int32(status)
 }
