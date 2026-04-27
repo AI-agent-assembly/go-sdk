@@ -13,6 +13,7 @@ type binding interface {
 	connect(endpoint string) (unsafe.Pointer, int32)
 	sendEvent(handle unsafe.Pointer, eventJSON string) int32
 	queryPolicy(handle unsafe.Pointer, queryJSON string) (string, int32)
+	disconnect(handle unsafe.Pointer) int32
 }
 
 // Client wraps FFI transport operations.
@@ -81,4 +82,26 @@ func (c *Client) QueryPolicy(queryJSON string) (string, error) {
 	}
 
 	return response, nil
+}
+
+// Disconnect closes the active FFI session.
+func (c *Client) Disconnect() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.binding == nil {
+		return ErrBindingUnavailable
+	}
+
+	if c.handle == nil {
+		return statusToError(statusNotConnected, "disconnect")
+	}
+
+	status := c.binding.disconnect(c.handle)
+	if err := statusToError(status, "disconnect"); err != nil {
+		return err
+	}
+
+	c.handle = nil
+	return nil
 }
