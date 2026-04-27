@@ -14,3 +14,13 @@ const (
 func WithAgentID(ctx context.Context, agentID string) context.Context {
 	return context.WithValue(ctx, agentIDContextKey, agentID)
 }
+
+// AgentIDFromContext returns the assembly agent ID, or an empty string if absent.
+func AgentIDFromContext(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+
+	agentID, _ := ctx.Value(agentIDContextKey).(string)
+	return agentID
+}
