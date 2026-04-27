@@ -60,6 +60,20 @@ func WithRunID(ctx context.Context, runID string) context.Context {
 	return context.WithValue(ctx, runIDContextKey, runID)
 }
 
+// RunIDFromContext returns the assembly run ID, generating one when absent.
+func RunIDFromContext(ctx context.Context) string {
+	if ctx == nil {
+		return generateRunID()
+	}
+
+	runID, _ := ctx.Value(runIDContextKey).(string)
+	if runID != "" {
+		return runID
+	}
+
+	return generateRunID()
+}
+
 func generateRunID() string {
 	return fmt.Sprintf("run_%s", ulid.Make().String())
 }
