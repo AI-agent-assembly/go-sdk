@@ -39,7 +39,7 @@ func TestGatewayClientCheckAppliesDefaultTimeoutWhenMissingDeadline(t *testing.T
 		}
 		observedDeadline = dl
 		return Decision{}, nil
-	}}, WithTimeout(timeout))
+	}})
 
 	_, err := client.Check(context.Background(), CheckRequest{ToolName: "calculator"})
 	if err != nil {
