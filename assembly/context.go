@@ -2,6 +2,8 @@ package assembly
 
 import "context"
 
+import oteltrace "go.opentelemetry.io/otel/trace"
+
 type contextKey string
 
 const (
@@ -37,5 +39,14 @@ func TraceIDFromContext(ctx context.Context) string {
 	}
 
 	traceID, _ := ctx.Value(traceIDContextKey).(string)
-	return traceID
+	if traceID != "" {
+		return traceID
+	}
+
+	spanCtx := oteltrace.SpanContextFromContext(ctx)
+	if spanCtx.IsValid() {
+		return spanCtx.TraceID().String()
+	}
+
+	return ""
 }
