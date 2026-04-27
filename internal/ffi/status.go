@@ -14,9 +14,13 @@ const (
 )
 
 var (
+	// ErrNullPointer reports an FFI null-pointer guard failure.
 	ErrNullPointer  = errors.New("ffi null pointer")
+	// ErrInvalidUTF8 reports invalid UTF-8 payload crossing the FFI boundary.
 	ErrInvalidUTF8  = errors.New("ffi invalid utf-8")
+	// ErrNotConnected reports calls attempted before connect.
 	ErrNotConnected = errors.New("ffi client not connected")
+	// ErrMutexPoison reports state lock corruption inside the FFI runtime.
 	ErrMutexPoison  = errors.New("ffi mutex poisoned")
 )
 

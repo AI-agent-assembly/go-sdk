@@ -6,6 +6,7 @@ import (
 	"unsafe"
 )
 
+// ErrBindingUnavailable reports that no FFI transport binding is compiled in.
 var ErrBindingUnavailable = errors.New("ffi binding unavailable")
 
 // binding encapsulates low-level transport calls.
