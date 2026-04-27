@@ -10,3 +10,8 @@ func (a *Assembly) Init(ctx context.Context) error {
 	_ = ctx
 	return nil
 }
+
+// Close shuts down runtime resources.
+func (a *Assembly) Close() error {
+	return nil
+}
