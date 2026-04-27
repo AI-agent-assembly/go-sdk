@@ -4,7 +4,7 @@ package assembly
 import (
 	"context"
 	"errors"
-	"strings"
+	"time"
 )
 
 // Config contains the user-supplied bootstrap settings.
@@ -12,6 +12,8 @@ type Config struct {
 	Gateway        string
 	APIKey         string
 	SidecarAddress string
+	FailClosed     bool
+	Timeout        time.Duration
 }
 
 var (
@@ -25,22 +27,20 @@ var sidecarConnector = connectToLocalSidecar
 
 // InitAssembly initializes the SDK runtime.
 func InitAssembly(cfg Config) error {
-	if err := validateConfig(cfg); err != nil {
-		return err
-	}
+	runtime := NewAssembly(
+		WithGatewayURL(cfg.Gateway),
+		WithAPIKey(cfg.APIKey),
+		WithFailClosed(cfg.FailClosed),
+		WithTimeout(cfg.Timeout),
+		withSidecarAddress(cfg.SidecarAddress),
+	)
 
-	_, err := sidecarConnector(context.Background(), cfg.SidecarAddress)
-	return err
+	return runtime.Init(context.Background())
 }
 
 func validateConfig(cfg Config) error {
-	if strings.TrimSpace(cfg.Gateway) == "" {
-		return ErrInvalidGateway
-	}
-
-	if strings.TrimSpace(cfg.APIKey) == "" {
-		return ErrInvalidAPIKey
-	}
-
-	return nil
+	return validateRuntimeOptions(runtimeOptions{
+		gatewayURL: cfg.Gateway,
+		apiKey:     cfg.APIKey,
+	})
 }

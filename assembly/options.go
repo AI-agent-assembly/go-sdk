@@ -40,3 +40,9 @@ func WithTimeout(timeout time.Duration) Option {
 		opts.timeout = timeout
 	}
 }
+
+func withSidecarAddress(sidecarAddress string) Option {
+	return func(opts *runtimeOptions) {
+		opts.sidecarAddress = sidecarAddress
+	}
+}
