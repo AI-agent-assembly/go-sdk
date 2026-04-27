@@ -33,3 +33,10 @@ func WithFailClosed(failClosed bool) Option {
 		opts.failClosed = failClosed
 	}
 }
+
+// WithTimeout sets the gateway check timeout.
+func WithTimeout(timeout time.Duration) Option {
+	return func(opts *runtimeOptions) {
+		opts.timeout = timeout
+	}
+}
