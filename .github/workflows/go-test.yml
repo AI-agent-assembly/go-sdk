@@ -34,3 +34,7 @@ jobs:
 
       - name: Run tests
         run: go test ./...
+
+      - name: Run context benchmark
+        if: matrix.os == 'ubuntu-latest' && matrix.go-version == '1.22.x' && matrix.cgo-enabled == '0'
+        run: go test ./assembly -run='^$' -bench='BenchmarkAgentIDFromContext' -benchtime=100ms
