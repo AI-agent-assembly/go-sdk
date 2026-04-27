@@ -19,3 +19,10 @@ func WithGatewayURL(gatewayURL string) Option {
 		opts.gatewayURL = gatewayURL
 	}
 }
+
+// WithAPIKey sets the governance API key.
+func WithAPIKey(apiKey string) Option {
+	return func(opts *runtimeOptions) {
+		opts.apiKey = apiKey
+	}
+}
