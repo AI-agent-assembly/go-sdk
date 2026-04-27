@@ -2,4 +2,7 @@ module github.com/agent-assembly/go-sdk
 
 go 1.22
 
-require google.golang.org/grpc v1.67.1
+require (
+	go.opentelemetry.io/otel/trace v1.35.0
+	google.golang.org/grpc v1.67.1
+)
