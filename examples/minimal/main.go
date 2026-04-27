@@ -2,18 +2,27 @@
 package main
 
 import (
+	"context"
 	"log"
+	"time"
 
 	"github.com/agent-assembly/go-sdk/assembly"
 )
 
 func main() {
-	err := assembly.InitAssembly(assembly.Config{
-		Gateway:        "https://your-gateway.com",
-		APIKey:         "xxx",
-		SidecarAddress: "127.0.0.1:50051",
-	})
-	if err != nil {
-		log.Fatalf("init assembly: %v", err)
+	runtime := assembly.NewAssembly(
+		assembly.WithGatewayURL("https://your-gateway.com"),
+		assembly.WithAPIKey("xxx"),
+		assembly.WithFailClosed(false),
+		assembly.WithTimeout(500*time.Millisecond),
+	)
+
+	if err := runtime.Init(context.Background()); err != nil {
+		log.Fatalf("init assembly runtime: %v", err)
 	}
+	defer func() {
+		if err := runtime.Close(); err != nil {
+			log.Printf("close assembly runtime: %v", err)
+		}
+	}()
 }
