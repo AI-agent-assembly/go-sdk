@@ -28,6 +28,11 @@ func NewClient(lowLevelBinding binding) *Client {
 	return &Client{binding: lowLevelBinding}
 }
 
+// NewDefaultClient constructs a client with build-selected transport binding.
+func NewDefaultClient() *Client {
+	return NewClient(defaultBinding())
+}
+
 // Connect establishes an FFI session with the runtime endpoint.
 func (c *Client) Connect(endpoint string) error {
 	c.mu.Lock()
