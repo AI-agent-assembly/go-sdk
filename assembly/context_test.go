@@ -2,7 +2,9 @@ package assembly
 
 import (
 	"context"
+	"fmt"
 	"strings"
+	"sync"
 	"testing"
 
 	oteltrace "go.opentelemetry.io/otel/trace"
@@ -95,5 +97,47 @@ func TestEnsureRunIDStableWithinContextTree(t *testing.T) {
 	_, childRunID := EnsureRunID(childCtx)
 	if childRunID != runID {
 		t.Fatalf("expected child context to preserve run id %q, got %q", runID, childRunID)
+	}
+}
+
+func TestContextPropagationAcrossGoroutines(t *testing.T) {
+	t.Parallel()
+
+	baseCtx := context.Background()
+	baseCtx = WithAgentID(baseCtx, "customer-support-bot")
+	baseCtx = WithTraceID(baseCtx, "trace-xyz")
+	ctxWithRunID, runID := EnsureRunID(baseCtx)
+
+	const workers = 32
+	errCh := make(chan error, workers)
+	var group sync.WaitGroup
+	group.Add(workers)
+
+	for idx := 0; idx < workers; idx++ {
+		go func() {
+			defer group.Done()
+			if got := AgentIDFromContext(ctxWithRunID); got != "customer-support-bot" {
+				errCh <- fmt.Errorf("agent id mismatch: %q", got)
+				return
+			}
+			if got := TraceIDFromContext(ctxWithRunID); got != "trace-xyz" {
+				errCh <- fmt.Errorf("trace id mismatch: %q", got)
+				return
+			}
+			if got := RunIDFromContext(ctxWithRunID); got != runID {
+				errCh <- fmt.Errorf("run id mismatch: %q", got)
+				return
+			}
+			errCh <- nil
+		}()
+	}
+
+	group.Wait()
+	close(errCh)
+
+	for err := range errCh {
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 }
