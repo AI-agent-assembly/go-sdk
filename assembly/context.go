@@ -1,8 +1,12 @@
 package assembly
 
-import "context"
+import (
+	"context"
+	"fmt"
 
-import oteltrace "go.opentelemetry.io/otel/trace"
+	"github.com/oklog/ulid/v2"
+	oteltrace "go.opentelemetry.io/otel/trace"
+)
 
 type contextKey string
 
@@ -54,4 +58,8 @@ func TraceIDFromContext(ctx context.Context) string {
 // WithRunID returns a new context containing the assembly run ID.
 func WithRunID(ctx context.Context, runID string) context.Context {
 	return context.WithValue(ctx, runIDContextKey, runID)
+}
+
+func generateRunID() string {
+	return fmt.Sprintf("run_%s", ulid.Make().String())
 }
