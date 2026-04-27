@@ -2,6 +2,7 @@ package assembly
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	oteltrace "go.opentelemetry.io/otel/trace"
@@ -62,5 +63,37 @@ func TestTraceIDFromContextFallsBackToOpenTelemetrySpanContext(t *testing.T) {
 	ctx = WithTraceID(ctx, "assembly-trace")
 	if got := TraceIDFromContext(ctx); got != "assembly-trace" {
 		t.Fatalf("expected explicit assembly trace id to win, got %q", got)
+	}
+}
+
+func TestRunIDFromContextAutoGeneratesWhenMissing(t *testing.T) {
+	t.Parallel()
+
+	runID := RunIDFromContext(context.Background())
+	if runID == "" {
+		t.Fatal("expected non-empty generated run id")
+	}
+	if !strings.HasPrefix(runID, "run_") {
+		t.Fatalf("expected run id prefix run_, got %q", runID)
+	}
+}
+
+func TestEnsureRunIDStableWithinContextTree(t *testing.T) {
+	t.Parallel()
+
+	ctxWithRunID, runID := EnsureRunID(context.Background())
+	if runID == "" {
+		t.Fatal("expected non-empty run id")
+	}
+
+	ctxWithRunIDAgain, sameRunID := EnsureRunID(ctxWithRunID)
+	if runID != sameRunID {
+		t.Fatalf("expected same run id on repeated ensure, got %q and %q", runID, sameRunID)
+	}
+
+	childCtx := context.WithValue(ctxWithRunIDAgain, struct{ key string }{key: "any"}, "value")
+	_, childRunID := EnsureRunID(childCtx)
+	if childRunID != runID {
+		t.Fatalf("expected child context to preserve run id %q, got %q", runID, childRunID)
 	}
 }
