@@ -8,7 +8,7 @@ Go SDK for Agent Assembly.
 
 ## Status
 
-Project scaffold for ticket `AAASM-17`.
+Runtime architecture scaffold for ticket `AAASM-63`.
 
 ## Module
 
@@ -21,6 +21,15 @@ module github.com/agent-assembly/go-sdk
 ```text
 assembly/
   init.go
+  runtime.go
+  options.go
+  defaults.go
+  validation.go
+  governance_client.go
+  policy_model.go
+  governance_errors.go
+  tool_wrapper.go
+  wrap_tools.go
   sidecar.go
   interceptor.go
 examples/minimal/
@@ -29,14 +38,21 @@ examples/minimal/
 ## Quick Start
 
 ```go
-import "github.com/agent-assembly/go-sdk/assembly"
+import (
+    "context"
+
+    "github.com/agent-assembly/go-sdk/assembly"
+)
 
 func main() {
-    _ = assembly.InitAssembly(assembly.Config{
-        Gateway:        "https://your-gateway.com",
-        APIKey:         "xxx",
-        SidecarAddress: "127.0.0.1:50051",
-    })
+    runtime := assembly.NewAssembly(
+        assembly.WithGatewayURL("https://your-gateway.com"),
+        assembly.WithAPIKey("xxx"),
+        assembly.WithFailClosed(false),
+    )
+
+    _ = runtime.Init(context.Background())
+    defer runtime.Close()
 }
 ```
 
