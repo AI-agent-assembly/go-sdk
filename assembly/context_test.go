@@ -141,3 +141,14 @@ func TestContextPropagationAcrossGoroutines(t *testing.T) {
 		}
 	}
 }
+
+func BenchmarkAgentIDFromContext(b *testing.B) {
+	ctx := WithAgentID(context.Background(), "benchmark-agent")
+
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for idx := 0; idx < b.N; idx++ {
+		_ = AgentIDFromContext(ctx)
+	}
+}
