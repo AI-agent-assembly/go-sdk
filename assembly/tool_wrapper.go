@@ -51,9 +51,15 @@ func (t *AssemblyTool) Call(ctx context.Context, input string) (string, error) {
 	}
 
 	if t.client != nil {
+		ctxWithRunID, runID := EnsureRunID(ctx)
+		ctx = ctxWithRunID
+
 		decision, err := t.client.Check(ctx, CheckRequest{
 			ToolName: t.inner.Name(),
 			Args:     input,
+			AgentID:  AgentIDFromContext(ctx),
+			TraceID:  TraceIDFromContext(ctx),
+			RunID:    runID,
 		})
 		if err != nil {
 			if t.opts.failClosed {
