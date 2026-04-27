@@ -9,3 +9,10 @@ linters:
     - govet
     - staticcheck
     - revive
+
+issues:
+  exclude-rules:
+    - path: assembly/tool_wrapper.go
+      linters:
+        - revive
+      text: stutters; consider calling this Tool
