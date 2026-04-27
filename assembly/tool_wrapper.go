@@ -12,8 +12,8 @@ type Tool interface {
 	Call(ctx context.Context, input string) (string, error)
 }
 
-//revive:disable-next-line:var-naming // Keep API name aligned with AAASM-63 contract.
 // AssemblyTool wraps a Tool with governance hooks.
+//nolint:revive // Keep API name aligned with AAASM-63 contract.
 type AssemblyTool struct {
 	inner  Tool
 	client GovernanceClient
