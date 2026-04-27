@@ -50,3 +50,8 @@ func TraceIDFromContext(ctx context.Context) string {
 
 	return ""
 }
+
+// WithRunID returns a new context containing the assembly run ID.
+func WithRunID(ctx context.Context, runID string) context.Context {
+	return context.WithValue(ctx, runIDContextKey, runID)
+}
