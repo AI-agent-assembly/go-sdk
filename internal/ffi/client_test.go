@@ -90,7 +90,8 @@ type mockBinding struct {
 
 func (m *mockBinding) connect(string) (unsafe.Pointer, int32) {
 	m.connectCalled = true
-	return unsafe.Pointer(uintptr(1)), statusOK
+	handle := new(byte)
+	return unsafe.Pointer(handle), statusOK
 }
 
 func (m *mockBinding) sendEvent(unsafe.Pointer, string) int32 {

@@ -32,7 +32,8 @@ type countingBinding struct {
 }
 
 func (c *countingBinding) connect(string) (unsafe.Pointer, int32) {
-	return unsafe.Pointer(uintptr(1)), statusOK
+	handle := new(byte)
+	return unsafe.Pointer(handle), statusOK
 }
 
 func (c *countingBinding) sendEvent(unsafe.Pointer, string) int32 {

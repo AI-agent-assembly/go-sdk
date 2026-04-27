@@ -43,7 +43,8 @@ func TestMemoryRegressionHarness(t *testing.T) {
 type memoryHarnessBinding struct{}
 
 func (m *memoryHarnessBinding) connect(string) (unsafe.Pointer, int32) {
-	return unsafe.Pointer(uintptr(1)), statusOK
+	handle := new(byte)
+	return unsafe.Pointer(handle), statusOK
 }
 
 func (m *memoryHarnessBinding) sendEvent(unsafe.Pointer, string) int32 {

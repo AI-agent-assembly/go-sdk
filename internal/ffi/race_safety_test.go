@@ -48,7 +48,8 @@ type raceSafeBinding struct {
 }
 
 func (r *raceSafeBinding) connect(string) (unsafe.Pointer, int32) {
-	return unsafe.Pointer(uintptr(1)), statusOK
+	handle := new(byte)
+	return unsafe.Pointer(handle), statusOK
 }
 
 func (r *raceSafeBinding) sendEvent(unsafe.Pointer, string) int32 {
