@@ -24,3 +24,8 @@ func AgentIDFromContext(ctx context.Context) string {
 	agentID, _ := ctx.Value(agentIDContextKey).(string)
 	return agentID
 }
+
+// WithTraceID returns a new context containing the assembly trace ID.
+func WithTraceID(ctx context.Context, traceID string) context.Context {
+	return context.WithValue(ctx, traceIDContextKey, traceID)
+}
