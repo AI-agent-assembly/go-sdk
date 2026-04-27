@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 )
 
 func TestWrapToolsPreservesLength(t *testing.T) {
@@ -81,6 +82,51 @@ func TestAssemblyToolPendingDecision(t *testing.T) {
 	}
 }
 
+func TestAssemblyToolPropagatesContextMetadataToGovernanceRequests(t *testing.T) {
+	client := &metadataCaptureGovernanceClient{
+		checkDecision: Decision{Pending: true},
+		waitDecision:  Decision{},
+		recordDone:    make(chan struct{}, 1),
+	}
+
+	wrapped := NewAssemblyTool(stubTool{name: "calculator", result: "42"}, client, defaultRuntimeOptions())
+	ctx := WithAgentID(context.Background(), "agent-1")
+	ctx = WithTraceID(ctx, "trace-1")
+
+	result, err := wrapped.Call(ctx, `{"x":1}`)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if result != "42" {
+		t.Fatalf("expected result 42, got %q", result)
+	}
+
+	select {
+	case <-client.recordDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for record result call")
+	}
+
+	if client.checkRequest.AgentID != "agent-1" {
+		t.Fatalf("expected check request agent id agent-1, got %q", client.checkRequest.AgentID)
+	}
+	if client.checkRequest.TraceID != "trace-1" {
+		t.Fatalf("expected check request trace id trace-1, got %q", client.checkRequest.TraceID)
+	}
+	if client.checkRequest.RunID == "" {
+		t.Fatal("expected non-empty run id on check request")
+	}
+	if client.approvalRequest.RunID != client.checkRequest.RunID {
+		t.Fatalf("expected approval run id %q, got %q", client.checkRequest.RunID, client.approvalRequest.RunID)
+	}
+	if client.recordRequest.RunID != client.checkRequest.RunID {
+		t.Fatalf("expected record run id %q, got %q", client.checkRequest.RunID, client.recordRequest.RunID)
+	}
+	if client.recordRequest.TraceID != "trace-1" {
+		t.Fatalf("expected record trace id trace-1, got %q", client.recordRequest.TraceID)
+	}
+}
+
 type stubGovernanceClient struct {
 	checkDecision Decision
 	checkErr      error
@@ -101,6 +147,38 @@ func (s *stubGovernanceClient) RecordResult(context.Context, RecordRequest) erro
 }
 
 func (s *stubGovernanceClient) Close() error {
+	return nil
+}
+
+type metadataCaptureGovernanceClient struct {
+	checkDecision   Decision
+	waitDecision    Decision
+	checkRequest    CheckRequest
+	approvalRequest ApprovalRequest
+	recordRequest   RecordRequest
+	recordDone      chan struct{}
+}
+
+func (m *metadataCaptureGovernanceClient) Check(_ context.Context, request CheckRequest) (Decision, error) {
+	m.checkRequest = request
+	return m.checkDecision, nil
+}
+
+func (m *metadataCaptureGovernanceClient) WaitForApproval(_ context.Context, request ApprovalRequest) (Decision, error) {
+	m.approvalRequest = request
+	return m.waitDecision, nil
+}
+
+func (m *metadataCaptureGovernanceClient) RecordResult(_ context.Context, request RecordRequest) error {
+	m.recordRequest = request
+	select {
+	case m.recordDone <- struct{}{}:
+	default:
+	}
+	return nil
+}
+
+func (m *metadataCaptureGovernanceClient) Close() error {
 	return nil
 }
 
