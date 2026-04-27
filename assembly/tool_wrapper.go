@@ -13,7 +13,7 @@ type Tool interface {
 }
 
 // AssemblyTool wraps a Tool with governance hooks.
-type AssemblyTool struct {
+type AssemblyTool struct { //nolint:revive // Keep API name aligned with AAASM-63 contract.
 	inner  Tool
 	client GovernanceClient
 	opts   runtimeOptions
