@@ -74,6 +74,21 @@ func RunIDFromContext(ctx context.Context) string {
 	return generateRunID()
 }
 
+// EnsureRunID returns a context with a stable run ID for the current context tree.
+func EnsureRunID(ctx context.Context) (context.Context, string) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	runID, _ := ctx.Value(runIDContextKey).(string)
+	if runID != "" {
+		return ctx, runID
+	}
+
+	runID = generateRunID()
+	return WithRunID(ctx, runID), runID
+}
+
 func generateRunID() string {
 	return fmt.Sprintf("run_%s", ulid.Make().String())
 }
