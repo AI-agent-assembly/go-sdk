@@ -29,3 +29,13 @@ func AgentIDFromContext(ctx context.Context) string {
 func WithTraceID(ctx context.Context, traceID string) context.Context {
 	return context.WithValue(ctx, traceIDContextKey, traceID)
 }
+
+// TraceIDFromContext returns the assembly trace ID, or an empty string if absent.
+func TraceIDFromContext(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+
+	traceID, _ := ctx.Value(traceIDContextKey).(string)
+	return traceID
+}
