@@ -1,5 +1,7 @@
 package assembly
 
+import "context"
+
 type contextKey string
 
 const (
@@ -7,3 +9,8 @@ const (
 	traceIDContextKey contextKey = "assembly.trace_id"
 	runIDContextKey   contextKey = "assembly.run_id"
 )
+
+// WithAgentID returns a new context containing the assembly agent ID.
+func WithAgentID(ctx context.Context, agentID string) context.Context {
+	return context.WithValue(ctx, agentIDContextKey, agentID)
+}
