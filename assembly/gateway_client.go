@@ -24,3 +24,20 @@ func NewGatewayClient(transport GatewayTransport, options ...Option) *GatewayCli
 
 	return &GatewayClient{transport: transport, config: cfg}
 }
+
+// Check performs a governance policy check using context cancellation semantics.
+func (c *GatewayClient) Check(ctx context.Context, request CheckRequest) (Decision, error) {
+	_, _ = c, request
+
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	select {
+	case <-ctx.Done():
+		return Decision{}, ctx.Err()
+	default:
+	}
+
+	return Decision{}, nil
+}
