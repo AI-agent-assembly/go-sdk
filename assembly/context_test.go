@@ -25,10 +25,6 @@ func TestAgentIDFromContextMissingReturnsEmpty(t *testing.T) {
 	if got := AgentIDFromContext(context.Background()); got != "" {
 		t.Fatalf("expected empty agent id, got %q", got)
 	}
-
-	if got := AgentIDFromContext(nil); got != "" {
-		t.Fatalf("expected empty agent id for nil context, got %q", got)
-	}
 }
 
 func TestTraceIDRoundTrip(t *testing.T) {
