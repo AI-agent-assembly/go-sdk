@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"testing"
+
+	"github.com/agent-assembly/go-sdk/internal/ffi"
 )
 
 func TestValidateConfig(t *testing.T) {
@@ -61,13 +63,15 @@ func TestInitAssembly(t *testing.T) {
 			if ctx == nil {
 				t.Fatal("expected context to be set")
 			}
-			if address != "127.0.0.1:50051" {
+			if address != "" {
 				t.Fatalf("unexpected address: %s", address)
 			}
 			return nil, nil
 		}
 
-		err := InitAssembly(validTestConfig())
+		cfg := validTestConfig()
+		cfg.SidecarAddress = ""
+		err := InitAssembly(cfg)
 		if err != nil {
 			t.Fatalf("expected no error, got %v", err)
 		}
@@ -84,9 +88,31 @@ func TestInitAssembly(t *testing.T) {
 			return nil, wantErr
 		}
 
-		err := InitAssembly(validTestConfig())
+		cfg := validTestConfig()
+		cfg.SidecarAddress = ""
+		err := InitAssembly(cfg)
 		if !errors.Is(err, wantErr) {
 			t.Fatalf("expected error %v, got %v", wantErr, err)
+		}
+	})
+
+	t.Run("fallback ffi transport is selected before sidecar connector", func(t *testing.T) {
+		if ffi.NativeBindingEnabled() {
+			t.Skip("native aa_ffi_go binding build does not use fallback transport")
+		}
+
+		originalConnector := sidecarConnector
+		t.Cleanup(func() {
+			sidecarConnector = originalConnector
+		})
+
+		sidecarConnector = func(context.Context, string) (SidecarClient, error) {
+			return nil, errors.New("connector should not be reached when fallback ffi connect succeeds")
+		}
+
+		err := InitAssembly(validTestConfig())
+		if err != nil {
+			t.Fatalf("expected fallback ffi connect to succeed, got %v", err)
 		}
 	})
 }
