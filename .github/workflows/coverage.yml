@@ -9,8 +9,12 @@ on:
 jobs:
   coverage:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        cgo-enabled: ["0", "1"]
     env:
       CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+      CGO_ENABLED: ${{ matrix.cgo-enabled }}
 
     steps:
       - name: Checkout
@@ -27,7 +31,7 @@ jobs:
         run: go mod tidy
 
       - name: Run tests with coverage
-        run: go test ./... -covermode=atomic -coverprofile=coverage.out
+        run: go test ./... -covermode=atomic -coverprofile=coverage-${{ matrix.cgo-enabled }}.out
 
       - name: Upload coverage to Codecov
         if: ${{ env.CODECOV_TOKEN != '' }}
@@ -35,9 +39,9 @@ jobs:
         with:
           token: ${{ env.CODECOV_TOKEN }}
           slug: AI-agent-assembly/go-sdk
-          files: coverage.out
-          flags: unit,go-sdk
-          name: go-sdk-coverage
+          files: coverage-${{ matrix.cgo-enabled }}.out
+          flags: unit,go-sdk,cgo-${{ matrix.cgo-enabled }}
+          name: go-sdk-coverage-cgo-${{ matrix.cgo-enabled }}
           verbose: true
           fail_ci_if_error: true
 
