@@ -1,12 +1,17 @@
 package assembly
 
-import "context"
+import (
+	"context"
+
+	"github.com/agent-assembly/go-sdk/internal/ffi"
+)
 
 // Assembly is the runtime entrypoint for governance-enabled execution.
 type Assembly struct {
 	opts             runtimeOptions
 	sidecar          SidecarClient
 	sidecarConnector func(context.Context, string) (SidecarClient, error)
+	ffiClient        *ffi.Client
 }
 
 // NewAssembly builds an Assembly runtime from functional options.
@@ -21,6 +26,7 @@ func NewAssembly(options ...Option) *Assembly {
 	return &Assembly{
 		opts:             opts,
 		sidecarConnector: sidecarConnector,
+		ffiClient:        ffi.NewDefaultClient(),
 	}
 }
 
@@ -28,6 +34,12 @@ func NewAssembly(options ...Option) *Assembly {
 func (a *Assembly) Init(ctx context.Context) error {
 	if err := validateRuntimeOptions(a.opts); err != nil {
 		return err
+	}
+
+	if a.opts.sidecarAddress != "" && a.ffiClient != nil {
+		if err := a.ffiClient.Connect(a.opts.sidecarAddress); err == nil {
+			return nil
+		}
 	}
 
 	sidecar, err := a.sidecarConnector(ctx, a.opts.sidecarAddress)

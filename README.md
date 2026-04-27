@@ -62,6 +62,14 @@ func main() {
 - `make lint`
 - `make test`
 
+## FFI Transport
+
+- CGo bridge module lives in `internal/ffi/cgo_bridge.go` with `#cgo LDFLAGS: -laa_ffi_go`.
+- Native FFI path is enabled with build tags: `-tags aa_ffi_go` (and `CGO_ENABLED=1`).
+- Pure-Go UDS fallback is selected automatically when `aa_ffi_go` tag is not set.
+- `CGO_ENABLED=0` is explicitly supported via fallback transport and CI matrix coverage.
+- Optional memory harness test (1M sends): `AAASM_MEMORY_HARNESS=1 go test ./internal/ffi -run TestMemoryRegressionHarness`.
+
 ## SonarQube CI Setup
 
 Configure these repository settings for the `SonarQube` workflow:
