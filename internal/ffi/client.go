@@ -12,6 +12,7 @@ var ErrBindingUnavailable = errors.New("ffi binding unavailable")
 type binding interface {
 	connect(endpoint string) (unsafe.Pointer, int32)
 	sendEvent(handle unsafe.Pointer, eventJSON string) int32
+	queryPolicy(handle unsafe.Pointer, queryJSON string) (string, int32)
 }
 
 // Client wraps FFI transport operations.
@@ -59,4 +60,25 @@ func (c *Client) SendEvent(eventJSON string) error {
 
 	status := c.binding.sendEvent(c.handle, eventJSON)
 	return statusToError(status, "send_event")
+}
+
+// QueryPolicy requests a policy decision over the active FFI session.
+func (c *Client) QueryPolicy(queryJSON string) (string, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.binding == nil {
+		return "", ErrBindingUnavailable
+	}
+
+	if c.handle == nil {
+		return "", statusToError(statusNotConnected, "query_policy")
+	}
+
+	response, status := c.binding.queryPolicy(c.handle, queryJSON)
+	if err := statusToError(status, "query_policy"); err != nil {
+		return "", err
+	}
+
+	return response, nil
 }

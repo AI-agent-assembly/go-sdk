@@ -41,13 +41,17 @@ func (cgoBridge) sendEvent(handle unsafe.Pointer, eventJSON string) int32 {
 	return int32(status)
 }
 
-func (cgoBridge) queryPolicy(handle unsafe.Pointer, queryJSON string) (*C.char, int32) {
+func (cgoBridge) queryPolicy(handle unsafe.Pointer, queryJSON string) (string, int32) {
 	cQueryJSON := C.CString(queryJSON)
 	defer C.free(unsafe.Pointer(cQueryJSON))
 
 	var out *C.char
 	status := C.aa_query_policy((*C.aa_client_handle)(handle), cQueryJSON, &out)
-	return out, int32(status)
+	if status != 0 || out == nil {
+		return "", int32(status)
+	}
+
+	return C.GoString(out), int32(status)
 }
 
 func (cgoBridge) disconnect(handle unsafe.Pointer) int32 {
