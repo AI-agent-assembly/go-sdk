@@ -47,11 +47,11 @@ func (fallbackUDSBridge) queryPolicy(handle unsafe.Pointer, queryJSON string) (s
 	}
 
 	payload, err := json.Marshal(map[string]any{
-		"allow":      true,
-		"reason":     "fallback-uds",
-		"endpoint":   client.endpoint,
+		"allow":       true,
+		"reason":      "fallback-uds",
+		"endpoint":    client.endpoint,
 		"events_sent": client.events,
-		"query":      queryJSON,
+		"query":       queryJSON,
 	})
 	if err != nil {
 		return "", statusInvalidUTF8
