@@ -6,9 +6,16 @@ import "time"
 type Option func(*runtimeOptions)
 
 type runtimeOptions struct {
-	gatewayURL    string
-	apiKey        string
-	failClosed    bool
-	timeout       time.Duration
+	gatewayURL     string
+	apiKey         string
+	failClosed     bool
+	timeout        time.Duration
 	sidecarAddress string
+}
+
+// WithGatewayURL sets the governance gateway URL.
+func WithGatewayURL(gatewayURL string) Option {
+	return func(opts *runtimeOptions) {
+		opts.gatewayURL = gatewayURL
+	}
 }
