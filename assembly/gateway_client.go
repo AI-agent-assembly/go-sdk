@@ -50,5 +50,9 @@ func (c *GatewayClient) Check(ctx context.Context, request CheckRequest) (Decisi
 	default:
 	}
 
-	return Decision{}, nil
+	if c.transport == nil {
+		return Decision{}, ErrRuntimeNotInitialized
+	}
+
+	return c.transport.Check(ctx, request)
 }
