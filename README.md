@@ -62,6 +62,19 @@ func main() {
 - `make lint`
 - `make test`
 
+## Context Propagation
+
+- `assembly.WithAgentID` / `assembly.AgentIDFromContext` propagate and read agent identity.
+- `assembly.WithTraceID` / `assembly.TraceIDFromContext` propagate explicit trace IDs and fallback to OpenTelemetry span context trace ID when unset.
+- `assembly.WithRunID` / `assembly.RunIDFromContext` propagate run identity.
+- `assembly.EnsureRunID` guarantees a stable run ID within the same context tree.
+
+## Gateway Context Handling
+
+- `GatewayClient.Check` fails fast when `ctx` is already cancelled.
+- If `ctx` has no deadline, `GatewayClient.Check` applies SDK timeout defaults (`500ms` unless overridden by `WithTimeout`).
+- The final effective context (values + timeout/deadline) is passed to the gateway transport check call.
+
 ## FFI Transport
 
 - CGo bridge module lives in `internal/ffi/cgo_bridge.go` with `#cgo LDFLAGS: -laa_ffi_go`.
