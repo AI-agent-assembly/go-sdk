@@ -11,6 +11,7 @@ var ErrBindingUnavailable = errors.New("ffi binding unavailable")
 // binding encapsulates low-level transport calls.
 type binding interface {
 	connect(endpoint string) (unsafe.Pointer, int32)
+	sendEvent(handle unsafe.Pointer, eventJSON string) int32
 }
 
 // Client wraps FFI transport operations.
@@ -41,4 +42,21 @@ func (c *Client) Connect(endpoint string) error {
 
 	c.handle = handle
 	return nil
+}
+
+// SendEvent forwards an event payload through the active FFI session.
+func (c *Client) SendEvent(eventJSON string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.binding == nil {
+		return ErrBindingUnavailable
+	}
+
+	if c.handle == nil {
+		return statusToError(statusNotConnected, "send_event")
+	}
+
+	status := c.binding.sendEvent(c.handle, eventJSON)
+	return statusToError(status, "send_event")
 }
