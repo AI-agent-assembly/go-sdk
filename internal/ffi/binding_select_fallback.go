@@ -1,4 +1,4 @@
-//go:build !aa_ffi_go
+//go:build !cgo || !aa_ffi_go
 
 package ffi
 

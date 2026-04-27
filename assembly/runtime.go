@@ -36,7 +36,7 @@ func (a *Assembly) Init(ctx context.Context) error {
 		return err
 	}
 
-	if a.opts.sidecarAddress != "" && a.ffiClient != nil {
+	if a.opts.sidecarAddress != "" && a.ffiClient != nil && ffi.NativeBindingEnabled() {
 		if err := a.ffiClient.Connect(a.opts.sidecarAddress); err == nil {
 			return nil
 		}
