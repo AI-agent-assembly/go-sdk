@@ -31,7 +31,6 @@ func TestGatewayClientCheckCancelledContextFailsFast(t *testing.T) {
 func TestGatewayClientCheckAppliesDefaultTimeoutWhenMissingDeadline(t *testing.T) {
 	t.Parallel()
 
-	const timeout = 500 * time.Millisecond
 	observedDeadline := time.Time{}
 	client := NewGatewayClient(gatewayTransportStub{check: func(ctx context.Context, _ CheckRequest) (Decision, error) {
 		dl, ok := ctx.Deadline()
@@ -54,8 +53,8 @@ func TestGatewayClientCheckAppliesDefaultTimeoutWhenMissingDeadline(t *testing.T
 	if remaining <= 0 {
 		t.Fatalf("expected positive remaining timeout, got %v", remaining)
 	}
-	if remaining > timeout {
-		t.Fatalf("expected remaining timeout <= %v, got %v", timeout, remaining)
+	if remaining > defaultGatewayTimeout {
+		t.Fatalf("expected remaining timeout <= %v, got %v", defaultGatewayTimeout, remaining)
 	}
 }
 
