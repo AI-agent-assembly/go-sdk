@@ -33,6 +33,17 @@ func (c *GatewayClient) Check(ctx context.Context, request CheckRequest) (Decisi
 		ctx = context.Background()
 	}
 
+	if _, hasDeadline := ctx.Deadline(); !hasDeadline {
+		timeout := c.config.timeout
+		if timeout <= 0 {
+			timeout = defaultGatewayTimeout
+		}
+
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
+
 	select {
 	case <-ctx.Done():
 		return Decision{}, ctx.Err()
