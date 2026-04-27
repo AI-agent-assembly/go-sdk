@@ -26,3 +26,10 @@ func WithAPIKey(apiKey string) Option {
 		opts.apiKey = apiKey
 	}
 }
+
+// WithFailClosed toggles gateway failure behavior.
+func WithFailClosed(failClosed bool) Option {
+	return func(opts *runtimeOptions) {
+		opts.failClosed = failClosed
+	}
+}
