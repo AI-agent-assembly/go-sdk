@@ -51,9 +51,15 @@ func (t *AssemblyTool) Call(ctx context.Context, input string) (string, error) {
 	}
 
 	if t.client != nil {
+		ctxWithRunID, runID := EnsureRunID(ctx)
+		ctx = ctxWithRunID
+
 		decision, err := t.client.Check(ctx, CheckRequest{
 			ToolName: t.inner.Name(),
 			Args:     input,
+			AgentID:  AgentIDFromContext(ctx),
+			TraceID:  TraceIDFromContext(ctx),
+			RunID:    runID,
 		})
 		if err != nil {
 			if t.opts.failClosed {
@@ -64,7 +70,11 @@ func (t *AssemblyTool) Call(ctx context.Context, input string) (string, error) {
 				return "", &PolicyViolationError{ToolName: t.inner.Name(), Reason: decision.Reason}
 			}
 			if decision.Pending {
-				decision, err = t.client.WaitForApproval(ctx, ApprovalRequest{ToolName: t.inner.Name()})
+				decision, err = t.client.WaitForApproval(ctx, ApprovalRequest{
+					ToolName: t.inner.Name(),
+					TraceID:  TraceIDFromContext(ctx),
+					RunID:    RunIDFromContext(ctx),
+				})
 				if err != nil {
 					return "", fmt.Errorf("approval wait failed: %w", err)
 				}
@@ -78,9 +88,12 @@ func (t *AssemblyTool) Call(ctx context.Context, input string) (string, error) {
 	result, err := t.inner.Call(ctx, input)
 
 	if t.client != nil {
+		recordCtx := context.WithoutCancel(ctx)
 		go func() {
-			_ = t.client.RecordResult(context.Background(), RecordRequest{
+			_ = t.client.RecordResult(recordCtx, RecordRequest{
 				ToolName: t.inner.Name(),
+				TraceID:  TraceIDFromContext(recordCtx),
+				RunID:    RunIDFromContext(recordCtx),
 				Result:   result,
 				Error:    errString(err),
 			})
