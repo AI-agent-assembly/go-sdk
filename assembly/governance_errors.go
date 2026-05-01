@@ -6,7 +6,7 @@ import (
 )
 
 // ErrRuntimeNotInitialized indicates runtime APIs were used before Init.
-var ErrRuntimeNotInitialized = errors.New("assembly runtime is not initialized")
+var ErrRuntimeNotInitialized = errors.New("assembly: runtime is not initialized")
 
 // PolicyViolationError indicates a policy decision denied tool execution.
 type PolicyViolationError struct {
