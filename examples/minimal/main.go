@@ -10,18 +10,17 @@ import (
 )
 
 func main() {
-	runtime := assembly.NewAssembly(
+	a, err := assembly.Init(context.Background(),
 		assembly.WithGatewayURL("https://your-gateway.com"),
 		assembly.WithAPIKey("xxx"),
 		assembly.WithFailClosed(false),
 		assembly.WithTimeout(500*time.Millisecond),
 	)
-
-	if err := runtime.Init(context.Background()); err != nil {
+	if err != nil {
 		log.Fatalf("init assembly runtime: %v", err)
 	}
 	defer func() {
-		if err := runtime.Close(); err != nil {
+		if err := a.Close(); err != nil {
 			log.Printf("close assembly runtime: %v", err)
 		}
 	}()
