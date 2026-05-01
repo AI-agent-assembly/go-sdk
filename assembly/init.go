@@ -4,17 +4,7 @@ package assembly
 import (
 	"context"
 	"errors"
-	"time"
 )
-
-// Config contains the user-supplied bootstrap settings.
-type Config struct {
-	Gateway        string
-	APIKey         string
-	SidecarAddress string
-	FailClosed     bool
-	Timeout        time.Duration
-}
 
 var (
 	// ErrInvalidGateway indicates the Gateway configuration is missing.
@@ -42,22 +32,3 @@ func Init(ctx context.Context, options ...Option) (*Assembly, error) {
 	return a, nil
 }
 
-// InitAssembly initializes the SDK runtime.
-func InitAssembly(cfg Config) error {
-	runtime := newAssembly(
-		WithGatewayURL(cfg.Gateway),
-		WithAPIKey(cfg.APIKey),
-		WithFailClosed(cfg.FailClosed),
-		WithTimeout(cfg.Timeout),
-		withSidecarAddress(cfg.SidecarAddress),
-	)
-
-	return runtime.boot(context.Background())
-}
-
-func validateConfig(cfg Config) error {
-	return validateRuntimeOptions(runtimeOptions{
-		gatewayURL: cfg.Gateway,
-		apiKey:     cfg.APIKey,
-	})
-}
