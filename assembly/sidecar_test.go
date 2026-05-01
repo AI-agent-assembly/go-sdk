@@ -92,3 +92,46 @@ func TestSidecarStartAlreadyRunningReturnsError(t *testing.T) {
 		t.Fatal("expected error when starting already-running sidecar")
 	}
 }
+
+func TestSidecarStopGraceful(t *testing.T) {
+	t.Parallel()
+
+	sc := NewSidecar(os.Args[0], "127.0.0.1:0")
+	sc.cmd = helperCmd("sleep", "127.0.0.1:0")
+
+	if err := sc.cmd.Start(); err != nil {
+		t.Fatalf("failed to start helper: %v", err)
+	}
+
+	sc.stopTimeout = 2 * time.Second
+	if err := sc.Stop(); err != nil {
+		t.Fatalf("expected graceful stop, got error: %v", err)
+	}
+}
+
+func TestSidecarStopForcedKill(t *testing.T) {
+	t.Parallel()
+
+	sc := NewSidecar(os.Args[0], "127.0.0.1:0")
+	// Use "listen" mode which blocks on select{} and ignores SIGTERM
+	sc.cmd = helperCmd("listen", "127.0.0.1:0")
+	sc.cmd.Stdout = nil
+
+	if err := sc.cmd.Start(); err != nil {
+		t.Fatalf("failed to start helper: %v", err)
+	}
+
+	sc.stopTimeout = 100 * time.Millisecond
+	if err := sc.Stop(); err != nil {
+		t.Fatalf("expected forced kill to succeed, got error: %v", err)
+	}
+}
+
+func TestSidecarStopNoProcess(t *testing.T) {
+	t.Parallel()
+
+	sc := NewSidecar("/nonexistent", "127.0.0.1:0")
+	if err := sc.Stop(); err != nil {
+		t.Fatalf("expected no error stopping unstarted sidecar, got: %v", err)
+	}
+}
