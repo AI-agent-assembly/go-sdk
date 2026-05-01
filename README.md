@@ -42,19 +42,21 @@ examples/minimal/
 ```go
 import (
     "context"
+    "log"
 
     "github.com/agent-assembly/go-sdk/assembly"
 )
 
 func main() {
-    runtime := assembly.NewAssembly(
+    a, err := assembly.Init(context.Background(),
         assembly.WithGatewayURL("https://your-gateway.com"),
         assembly.WithAPIKey("xxx"),
         assembly.WithFailClosed(false),
     )
-
-    _ = runtime.Init(context.Background())
-    defer runtime.Close()
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer a.Close()
 }
 ```
 

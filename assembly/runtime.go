@@ -14,8 +14,8 @@ type Assembly struct {
 	ffiClient        *ffi.Client
 }
 
-// NewAssembly builds an Assembly runtime from functional options.
-func NewAssembly(options ...Option) *Assembly {
+// newAssembly builds an Assembly runtime from functional options.
+func newAssembly(options ...Option) *Assembly {
 	opts := defaultRuntimeOptions()
 	for _, option := range options {
 		if option != nil {
@@ -30,8 +30,8 @@ func NewAssembly(options ...Option) *Assembly {
 	}
 }
 
-// Init boots the runtime and prepares governance integrations.
-func (a *Assembly) Init(ctx context.Context) error {
+// boot boots the runtime and prepares governance integrations.
+func (a *Assembly) boot(ctx context.Context) error {
 	if err := validateRuntimeOptions(a.opts); err != nil {
 		return err
 	}

@@ -135,7 +135,7 @@ func TestWrapToolsAppliesOptions(t *testing.T) {
 }
 
 func TestNewAssemblyIgnoresNilOption(t *testing.T) {
-	runtime := NewAssembly(nil, WithGatewayURL("https://gateway.example.com"), WithAPIKey("key"))
+	runtime := newAssembly(nil, WithGatewayURL("https://gateway.example.com"), WithAPIKey("key"))
 
 	if runtime.opts.gatewayURL != "https://gateway.example.com" {
 		t.Fatalf("expected gateway URL to be set, got %q", runtime.opts.gatewayURL)

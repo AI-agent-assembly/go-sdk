@@ -8,72 +8,29 @@ import (
 	"github.com/agent-assembly/go-sdk/internal/ffi"
 )
 
-func TestValidateConfig(t *testing.T) {
-	t.Parallel()
-
-	testCases := []struct {
-		name    string
-		cfg     Config
-		wantErr error
-	}{
-		{
-			name: "missing gateway",
-			cfg: Config{
-				APIKey:         "test-key",
-				SidecarAddress: "127.0.0.1:50051",
-			},
-			wantErr: ErrInvalidGateway,
-		},
-		{
-			name: "missing api key",
-			cfg: Config{
-				Gateway:        "https://gateway.example.com",
-				SidecarAddress: "127.0.0.1:50051",
-			},
-			wantErr: ErrInvalidAPIKey,
-		},
-		{
-			name:    "valid config",
-			cfg:     validTestConfig(),
-			wantErr: nil,
-		},
-	}
-
-	for _, tc := range testCases {
-		tc := tc
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
-			err := validateConfig(tc.cfg)
-			if !errors.Is(err, tc.wantErr) {
-				t.Fatalf("expected error %v, got %v", tc.wantErr, err)
-			}
-		})
-	}
-}
-
-func TestInitAssembly(t *testing.T) {
+func TestInit(t *testing.T) {
 	t.Run("connector success", func(t *testing.T) {
 		originalConnector := sidecarConnector
 		t.Cleanup(func() {
 			sidecarConnector = originalConnector
 		})
 
-		sidecarConnector = func(ctx context.Context, address string) (SidecarClient, error) {
+		sidecarConnector = func(ctx context.Context, _ string) (SidecarClient, error) {
 			if ctx == nil {
 				t.Fatal("expected context to be set")
-			}
-			if address != "" {
-				t.Fatalf("unexpected address: %s", address)
 			}
 			return nil, nil
 		}
 
-		cfg := validTestConfig()
-		cfg.SidecarAddress = ""
-		err := InitAssembly(cfg)
+		a, err := Init(context.Background(),
+			WithGatewayURL("https://gateway.example.com"),
+			WithAPIKey("test-key"),
+		)
 		if err != nil {
 			t.Fatalf("expected no error, got %v", err)
+		}
+		if a == nil {
+			t.Fatal("expected non-nil Assembly")
 		}
 	})
 
@@ -88,11 +45,25 @@ func TestInitAssembly(t *testing.T) {
 			return nil, wantErr
 		}
 
-		cfg := validTestConfig()
-		cfg.SidecarAddress = ""
-		err := InitAssembly(cfg)
+		a, err := Init(context.Background(),
+			WithGatewayURL("https://gateway.example.com"),
+			WithAPIKey("test-key"),
+		)
 		if !errors.Is(err, wantErr) {
 			t.Fatalf("expected error %v, got %v", wantErr, err)
+		}
+		if a != nil {
+			t.Fatal("expected nil Assembly on error")
+		}
+	})
+
+	t.Run("validation failure returns error", func(t *testing.T) {
+		a, err := Init(context.Background(), WithAPIKey("test-key"))
+		if !errors.Is(err, ErrInvalidGateway) {
+			t.Fatalf("expected ErrInvalidGateway, got %v", err)
+		}
+		if a != nil {
+			t.Fatal("expected nil Assembly on validation error")
 		}
 	})
 
@@ -110,9 +81,12 @@ func TestInitAssembly(t *testing.T) {
 			return nil, errors.New("connector should not be reached when fallback ffi connect succeeds")
 		}
 
-		err := InitAssembly(validTestConfig())
+		a, err := Init(context.Background(), validTestOptions()...)
 		if err != nil {
 			t.Fatalf("expected fallback ffi connect to succeed, got %v", err)
+		}
+		if a == nil {
+			t.Fatal("expected non-nil Assembly")
 		}
 	})
 }
