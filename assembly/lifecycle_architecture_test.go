@@ -26,7 +26,7 @@ func TestAssemblyLifecycle(t *testing.T) {
 		return stubSidecarClient{}, nil
 	}
 
-	if err := assembly.Init(context.Background()); err != nil {
+	if err := assembly.boot(context.Background()); err != nil {
 		t.Fatalf("expected no init error, got %v", err)
 	}
 	if !connectorCalled {
@@ -53,7 +53,7 @@ func TestAssemblyInitValidation(t *testing.T) {
 		return nil, nil
 	}
 
-	err := assembly.Init(context.Background())
+	err := assembly.boot(context.Background())
 	if !errors.Is(err, ErrInvalidGateway) {
 		t.Fatalf("expected ErrInvalidGateway, got %v", err)
 	}

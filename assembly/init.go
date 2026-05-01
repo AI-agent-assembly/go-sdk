@@ -35,7 +35,7 @@ func InitAssembly(cfg Config) error {
 		withSidecarAddress(cfg.SidecarAddress),
 	)
 
-	return runtime.Init(context.Background())
+	return runtime.boot(context.Background())
 }
 
 func validateConfig(cfg Config) error {

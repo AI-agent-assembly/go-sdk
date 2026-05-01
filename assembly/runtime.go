@@ -30,8 +30,8 @@ func NewAssembly(options ...Option) *Assembly {
 	}
 }
 
-// Init boots the runtime and prepares governance integrations.
-func (a *Assembly) Init(ctx context.Context) error {
+// boot boots the runtime and prepares governance integrations.
+func (a *Assembly) boot(ctx context.Context) error {
 	if err := validateRuntimeOptions(a.opts); err != nil {
 		return err
 	}
