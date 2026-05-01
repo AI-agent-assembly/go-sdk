@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"syscall"
 	"time"
 )
 
@@ -47,6 +48,34 @@ func (s *Sidecar) Start(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// Stop sends SIGTERM to the sidecar process and waits for graceful shutdown.
+// If the process does not exit within the stop timeout, it sends SIGKILL.
+func (s *Sidecar) Stop() error {
+	if s.cmd == nil || s.cmd.Process == nil {
+		return nil
+	}
+
+	if err := s.cmd.Process.Signal(syscall.SIGTERM); err != nil {
+		return fmt.Errorf("assembly: failed to signal sidecar: %w", err)
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		done <- s.cmd.Wait()
+	}()
+
+	select {
+	case err := <-done:
+		return err
+	case <-time.After(s.stopTimeout):
+		if killErr := s.cmd.Process.Kill(); killErr != nil {
+			return fmt.Errorf("assembly: failed to kill sidecar: %w", killErr)
+		}
+		<-done
+		return nil
+	}
 }
 
 func connectToLocalSidecar(ctx context.Context, address string) (SidecarClient, error) {
