@@ -10,10 +10,14 @@ var ErrRuntimeNotInitialized = errors.New("assembly: runtime is not initialized"
 
 // PolicyViolationError indicates a policy decision denied tool execution.
 type PolicyViolationError struct {
+	// ToolName is the name of the tool whose execution was denied.
 	ToolName string
-	Reason   string
+	// Reason is the human-readable explanation from the governance gateway.
+	Reason string
 }
 
+// Error returns a formatted message including the tool name and denial reason
+// when available.
 func (e *PolicyViolationError) Error() string {
 	if e == nil {
 		return "assembly: policy violation"
