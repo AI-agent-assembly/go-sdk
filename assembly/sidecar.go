@@ -69,7 +69,7 @@ func (s *Sidecar) Stop() error {
 
 	select {
 	case err := <-done:
-		return err
+		return ignoreSignalExit(err)
 	case <-time.After(s.stopTimeout):
 		if killErr := s.cmd.Process.Kill(); killErr != nil {
 			return fmt.Errorf("assembly: failed to kill sidecar: %w", killErr)
@@ -91,12 +91,22 @@ func (s *Sidecar) Healthy(ctx context.Context) error {
 		default:
 			conn, err := net.DialTimeout("tcp", s.address, healthPollInterval)
 			if err == nil {
-				conn.Close()
+				_ = conn.Close()
 				return nil
 			}
 			time.Sleep(healthPollInterval)
 		}
 	}
+}
+
+// ignoreSignalExit returns nil when the process exited due to a signal,
+// which is the expected outcome after sending SIGTERM or SIGKILL.
+func ignoreSignalExit(err error) error {
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		return nil
+	}
+	return err
 }
 
 func connectToLocalSidecar(ctx context.Context, address string) (SidecarClient, error) {

@@ -13,7 +13,7 @@ import (
 
 // TestHelperProcess is the test helper process entry point.
 // It is invoked as a subprocess by tests that need a real process to manage.
-func TestHelperProcess(t *testing.T) {
+func TestHelperProcess(_ *testing.T) {
 	if os.Getenv("GO_TEST_HELPER_PROCESS") != "1" {
 		return
 	}
@@ -26,16 +26,16 @@ func TestHelperProcess(t *testing.T) {
 		}
 		ln, err := net.Listen("tcp", addr)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "listen error: %v\n", err)
+			_, _ = fmt.Fprintf(os.Stderr, "listen error: %v\n", err)
 			os.Exit(1)
 		}
-		defer ln.Close()
-		fmt.Fprintln(os.Stdout, "listening")
+		defer func() { _ = ln.Close() }()
+		_, _ = fmt.Fprintln(os.Stdout, "listening")
 		select {}
 	case "sleep":
 		time.Sleep(30 * time.Second)
 	default:
-		fmt.Fprintln(os.Stderr, "unknown mode")
+		_, _ = fmt.Fprintln(os.Stderr, "unknown mode")
 		os.Exit(1)
 	}
 }
@@ -143,7 +143,7 @@ func TestSidecarHealthySuccess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create listener: %v", err)
 	}
-	defer ln.Close()
+	defer func() { _ = ln.Close() }()
 
 	sc := NewSidecar("/nonexistent", ln.Addr().String())
 
