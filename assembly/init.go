@@ -20,7 +20,7 @@ var (
 	// ErrInvalidGateway indicates the Gateway configuration is missing.
 	ErrInvalidGateway = errors.New("assembly: gateway is required")
 	// ErrInvalidAPIKey indicates the API key configuration is missing.
-	ErrInvalidAPIKey = errors.New("api key is required")
+	ErrInvalidAPIKey = errors.New("assembly: api key is required")
 )
 
 var sidecarConnector = connectToLocalSidecar
