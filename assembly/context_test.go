@@ -148,3 +148,33 @@ func BenchmarkAgentIDFromContext(b *testing.B) {
 		_ = AgentIDFromContext(ctx)
 	}
 }
+
+func BenchmarkContextOps(b *testing.B) {
+	ctx := WithAgentID(context.Background(), "bench-agent")
+	ctx = WithTraceID(ctx, "bench-trace")
+	ctx = WithRunID(ctx, "bench-run")
+
+	b.Run("AgentIDFromContext", func(b *testing.B) {
+		b.ReportAllocs()
+		b.ResetTimer()
+		for idx := 0; idx < b.N; idx++ {
+			_ = AgentIDFromContext(ctx)
+		}
+	})
+
+	b.Run("TraceIDFromContext", func(b *testing.B) {
+		b.ReportAllocs()
+		b.ResetTimer()
+		for idx := 0; idx < b.N; idx++ {
+			_ = TraceIDFromContext(ctx)
+		}
+	})
+
+	b.Run("RunIDFromContext", func(b *testing.B) {
+		b.ReportAllocs()
+		b.ResetTimer()
+		for idx := 0; idx < b.N; idx++ {
+			_ = RunIDFromContext(ctx)
+		}
+	})
+}
