@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"os/exec"
 	"syscall"
 	"time"
@@ -75,6 +76,26 @@ func (s *Sidecar) Stop() error {
 		}
 		<-done
 		return nil
+	}
+}
+
+const healthPollInterval = 50 * time.Millisecond
+
+// Healthy polls the sidecar address via TCP until it accepts connections
+// or the context is cancelled.
+func (s *Sidecar) Healthy(ctx context.Context) error {
+	for {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("assembly: sidecar health check timed out: %w", ctx.Err())
+		default:
+			conn, err := net.DialTimeout("tcp", s.address, healthPollInterval)
+			if err == nil {
+				conn.Close()
+				return nil
+			}
+			time.Sleep(healthPollInterval)
+		}
 	}
 }
 
