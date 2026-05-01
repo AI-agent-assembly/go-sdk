@@ -135,3 +135,40 @@ func TestSidecarStopNoProcess(t *testing.T) {
 		t.Fatalf("expected no error stopping unstarted sidecar, got: %v", err)
 	}
 }
+
+func TestSidecarHealthySuccess(t *testing.T) {
+	t.Parallel()
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to create listener: %v", err)
+	}
+	defer ln.Close()
+
+	sc := NewSidecar("/nonexistent", ln.Addr().String())
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	if err := sc.Healthy(ctx); err != nil {
+		t.Fatalf("expected healthy, got error: %v", err)
+	}
+}
+
+func TestSidecarHealthyTimeout(t *testing.T) {
+	t.Parallel()
+
+	// Use a port that nothing is listening on
+	sc := NewSidecar("/nonexistent", "127.0.0.1:1")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+
+	err := sc.Healthy(ctx)
+	if err == nil {
+		t.Fatal("expected timeout error, got nil")
+	}
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("expected DeadlineExceeded in error chain, got: %v", err)
+	}
+}
