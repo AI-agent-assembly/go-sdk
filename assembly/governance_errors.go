@@ -16,20 +16,20 @@ type PolicyViolationError struct {
 
 func (e *PolicyViolationError) Error() string {
 	if e == nil {
-		return "policy violation"
+		return "assembly: policy violation"
 	}
 
 	if e.ToolName == "" && e.Reason == "" {
-		return "policy violation"
+		return "assembly: policy violation"
 	}
 
 	if e.ToolName == "" {
-		return fmt.Sprintf("policy violation: %s", e.Reason)
+		return fmt.Sprintf("assembly: policy violation: %s", e.Reason)
 	}
 
 	if e.Reason == "" {
-		return fmt.Sprintf("policy violation: tool=%s", e.ToolName)
+		return fmt.Sprintf("assembly: policy violation: tool=%s", e.ToolName)
 	}
 
-	return fmt.Sprintf("policy violation: tool=%s reason=%s", e.ToolName, e.Reason)
+	return fmt.Sprintf("assembly: policy violation: tool=%s reason=%s", e.ToolName, e.Reason)
 }
