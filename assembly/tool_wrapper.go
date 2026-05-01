@@ -63,7 +63,7 @@ func (t *AssemblyTool) Call(ctx context.Context, input string) (string, error) {
 		})
 		if err != nil {
 			if t.opts.failClosed {
-				return "", fmt.Errorf("governance check failed: %w", err)
+				return "", fmt.Errorf("assembly: governance check failed: %w", err)
 			}
 		} else {
 			if decision.Denied {
