@@ -31,4 +31,3 @@ func Init(ctx context.Context, options ...Option) (*Assembly, error) {
 	}
 	return a, nil
 }
-

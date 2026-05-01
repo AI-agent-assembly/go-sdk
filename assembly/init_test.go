@@ -15,7 +15,7 @@ func TestInit(t *testing.T) {
 			sidecarConnector = originalConnector
 		})
 
-		sidecarConnector = func(ctx context.Context, address string) (SidecarClient, error) {
+		sidecarConnector = func(ctx context.Context, _ string) (SidecarClient, error) {
 			if ctx == nil {
 				t.Fatal("expected context to be set")
 			}
