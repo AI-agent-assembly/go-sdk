@@ -178,3 +178,42 @@ func BenchmarkContextOps(b *testing.B) {
 		}
 	})
 }
+
+func TestContextOpsBenchmarkThreshold(t *testing.T) {
+	const maxNsPerOp = 100
+
+	ctx := WithAgentID(context.Background(), "threshold-agent")
+	ctx = WithTraceID(ctx, "threshold-trace")
+	ctx = WithRunID(ctx, "threshold-run")
+
+	ops := []struct {
+		name string
+		fn   func(b *testing.B)
+	}{
+		{"AgentIDFromContext", func(b *testing.B) {
+			for idx := 0; idx < b.N; idx++ {
+				_ = AgentIDFromContext(ctx)
+			}
+		}},
+		{"TraceIDFromContext", func(b *testing.B) {
+			for idx := 0; idx < b.N; idx++ {
+				_ = TraceIDFromContext(ctx)
+			}
+		}},
+		{"RunIDFromContext", func(b *testing.B) {
+			for idx := 0; idx < b.N; idx++ {
+				_ = RunIDFromContext(ctx)
+			}
+		}},
+	}
+
+	for _, op := range ops {
+		result := testing.Benchmark(op.fn)
+		nsPerOp := result.NsPerOp()
+		if nsPerOp >= maxNsPerOp {
+			t.Errorf("%s: %d ns/op exceeds %d ns/op threshold", op.name, nsPerOp, maxNsPerOp)
+		} else {
+			t.Logf("%s: %d ns/op (threshold: %d ns/op)", op.name, nsPerOp, maxNsPerOp)
+		}
+	}
+}
