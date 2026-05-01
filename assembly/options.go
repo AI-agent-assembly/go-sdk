@@ -11,6 +11,7 @@ type runtimeOptions struct {
 	failClosed     bool
 	timeout        time.Duration
 	sidecarAddress string
+	sidecarBinary  string
 }
 
 // WithGatewayURL sets the governance gateway URL.
@@ -38,6 +39,13 @@ func WithFailClosed(failClosed bool) Option {
 func WithTimeout(timeout time.Duration) Option {
 	return func(opts *runtimeOptions) {
 		opts.timeout = timeout
+	}
+}
+
+// WithSidecarBinary sets the path to the sidecar binary for managed lifecycle.
+func WithSidecarBinary(path string) Option {
+	return func(opts *runtimeOptions) {
+		opts.sidecarBinary = path
 	}
 }
 
