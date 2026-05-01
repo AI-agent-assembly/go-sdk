@@ -7,15 +7,13 @@ import (
 )
 
 func TestAssemblyLifecycle(t *testing.T) {
-	t.Parallel()
-
-	assembly := newAssembly(
-		WithGatewayURL("https://gateway.example.com"),
-		WithAPIKey("test-key"),
-	)
+	originalConnector := sidecarConnector
+	t.Cleanup(func() {
+		sidecarConnector = originalConnector
+	})
 
 	connectorCalled := false
-	assembly.sidecarConnector = func(ctx context.Context, address string) (SidecarClient, error) {
+	sidecarConnector = func(ctx context.Context, address string) (SidecarClient, error) {
 		connectorCalled = true
 		if ctx == nil {
 			t.Fatal("expected context to be set")
@@ -26,20 +24,24 @@ func TestAssemblyLifecycle(t *testing.T) {
 		return stubSidecarClient{}, nil
 	}
 
-	if err := assembly.boot(context.Background()); err != nil {
+	a, err := Init(context.Background(),
+		WithGatewayURL("https://gateway.example.com"),
+		WithAPIKey("test-key"),
+	)
+	if err != nil {
 		t.Fatalf("expected no init error, got %v", err)
 	}
 	if !connectorCalled {
 		t.Fatal("expected sidecar connector to be called")
 	}
-	if assembly.sidecar == nil {
+	if a.sidecar == nil {
 		t.Fatal("expected sidecar to be set after init")
 	}
 
-	if err := assembly.Close(); err != nil {
+	if err := a.Close(); err != nil {
 		t.Fatalf("expected no close error, got %v", err)
 	}
-	if assembly.sidecar != nil {
+	if a.sidecar != nil {
 		t.Fatal("expected sidecar to be released after close")
 	}
 }
@@ -47,15 +49,12 @@ func TestAssemblyLifecycle(t *testing.T) {
 func TestAssemblyInitValidation(t *testing.T) {
 	t.Parallel()
 
-	assembly := newAssembly(WithAPIKey("test-key"))
-	assembly.sidecarConnector = func(context.Context, string) (SidecarClient, error) {
-		t.Fatal("connector should not run when config is invalid")
-		return nil, nil
-	}
-
-	err := assembly.boot(context.Background())
+	a, err := Init(context.Background(), WithAPIKey("test-key"))
 	if !errors.Is(err, ErrInvalidGateway) {
 		t.Fatalf("expected ErrInvalidGateway, got %v", err)
+	}
+	if a != nil {
+		t.Fatal("expected nil Assembly on validation error")
 	}
 }
 
