@@ -9,7 +9,7 @@ import (
 func TestAssemblyLifecycle(t *testing.T) {
 	t.Parallel()
 
-	assembly := NewAssembly(
+	assembly := newAssembly(
 		WithGatewayURL("https://gateway.example.com"),
 		WithAPIKey("test-key"),
 	)
@@ -47,7 +47,7 @@ func TestAssemblyLifecycle(t *testing.T) {
 func TestAssemblyInitValidation(t *testing.T) {
 	t.Parallel()
 
-	assembly := NewAssembly(WithAPIKey("test-key"))
+	assembly := newAssembly(WithAPIKey("test-key"))
 	assembly.sidecarConnector = func(context.Context, string) (SidecarClient, error) {
 		t.Fatal("connector should not run when config is invalid")
 		return nil, nil

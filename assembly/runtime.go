@@ -14,8 +14,8 @@ type Assembly struct {
 	ffiClient        *ffi.Client
 }
 
-// NewAssembly builds an Assembly runtime from functional options.
-func NewAssembly(options ...Option) *Assembly {
+// newAssembly builds an Assembly runtime from functional options.
+func newAssembly(options ...Option) *Assembly {
 	opts := defaultRuntimeOptions()
 	for _, option := range options {
 		if option != nil {

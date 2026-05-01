@@ -35,7 +35,7 @@ var sidecarConnector = connectToLocalSidecar
 //	    assembly.WithFailClosed(true),
 //	)
 func Init(ctx context.Context, options ...Option) (*Assembly, error) {
-	a := NewAssembly(options...)
+	a := newAssembly(options...)
 	if err := a.boot(ctx); err != nil {
 		return nil, err
 	}
@@ -44,7 +44,7 @@ func Init(ctx context.Context, options ...Option) (*Assembly, error) {
 
 // InitAssembly initializes the SDK runtime.
 func InitAssembly(cfg Config) error {
-	runtime := NewAssembly(
+	runtime := newAssembly(
 		WithGatewayURL(cfg.Gateway),
 		WithAPIKey(cfg.APIKey),
 		WithFailClosed(cfg.FailClosed),
