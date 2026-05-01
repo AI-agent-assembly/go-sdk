@@ -18,7 +18,7 @@ type Config struct {
 
 var (
 	// ErrInvalidGateway indicates the Gateway configuration is missing.
-	ErrInvalidGateway = errors.New("gateway is required")
+	ErrInvalidGateway = errors.New("assembly: gateway is required")
 	// ErrInvalidAPIKey indicates the API key configuration is missing.
 	ErrInvalidAPIKey = errors.New("api key is required")
 )
