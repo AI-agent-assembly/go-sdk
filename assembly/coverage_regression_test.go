@@ -150,7 +150,7 @@ func TestNewAssemblyIgnoresNilOption(t *testing.T) {
 
 func TestPolicyViolationErrorFormatting(t *testing.T) {
 	var nilErr *PolicyViolationError
-	if got := nilErr.Error(); got != "policy violation" {
+	if got := nilErr.Error(); got != "assembly: policy violation" {
 		t.Fatalf("expected nil receiver fallback, got %q", got)
 	}
 
@@ -158,10 +158,10 @@ func TestPolicyViolationErrorFormatting(t *testing.T) {
 		err  *PolicyViolationError
 		want string
 	}{
-		{err: &PolicyViolationError{}, want: "policy violation"},
-		{err: &PolicyViolationError{Reason: "blocked"}, want: "policy violation: blocked"},
-		{err: &PolicyViolationError{ToolName: "web_search"}, want: "policy violation: tool=web_search"},
-		{err: &PolicyViolationError{ToolName: "web_search", Reason: "blocked"}, want: "policy violation: tool=web_search reason=blocked"},
+		{err: &PolicyViolationError{}, want: "assembly: policy violation"},
+		{err: &PolicyViolationError{Reason: "blocked"}, want: "assembly: policy violation: blocked"},
+		{err: &PolicyViolationError{ToolName: "web_search"}, want: "assembly: policy violation: tool=web_search"},
+		{err: &PolicyViolationError{ToolName: "web_search", Reason: "blocked"}, want: "assembly: policy violation: tool=web_search reason=blocked"},
 	}
 
 	for _, tc := range testCases {
