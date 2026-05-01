@@ -76,7 +76,7 @@ func (t *AssemblyTool) Call(ctx context.Context, input string) (string, error) {
 					RunID:    RunIDFromContext(ctx),
 				})
 				if err != nil {
-					return "", fmt.Errorf("approval wait failed: %w", err)
+					return "", fmt.Errorf("assembly: approval wait failed: %w", err)
 				}
 				if decision.Denied {
 					return "", &PolicyViolationError{ToolName: t.inner.Name(), Reason: decision.Reason}
