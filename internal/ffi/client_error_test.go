@@ -62,3 +62,32 @@ func TestClient_DisconnectSurfacesBindingError(t *testing.T) {
 		t.Fatalf("expected ErrPanic from disconnect, got %v", err)
 	}
 }
+
+// TestClient_DisconnectClearsHandleOnNonOKStatus guards the AAASM-5052
+// invariant: the native aa_disconnect frees the handle unconditionally
+// (Box::from_raw) before returning its status, so even on a non-OK status the
+// Client must drop its handle. If it kept the dangling pointer, a later call
+// would be use-after-free and a second Disconnect a double-free.
+func TestClient_DisconnectClearsHandleOnNonOKStatus(t *testing.T) {
+	t.Parallel()
+
+	client := NewClient(statusBinding{disconnectStatus: statusPanic})
+	if err := client.Connect("unix:///tmp/aa.sock", "", ""); err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	if err := client.Disconnect(); !errors.Is(err, ErrPanic) {
+		t.Fatalf("expected ErrPanic from disconnect, got %v", err)
+	}
+
+	// Handle must be cleared despite the non-OK status so freed memory is
+	// never reused.
+	if client.handle != nil {
+		t.Fatal("expected handle cleared after non-OK disconnect (use-after-free risk)")
+	}
+
+	// A second Disconnect must not re-invoke the native free (double-free);
+	// with the handle cleared it short-circuits to not-connected.
+	if err := client.Disconnect(); !errors.Is(err, ErrNotConnected) {
+		t.Fatalf("expected ErrNotConnected on repeat disconnect, got %v", err)
+	}
+}
