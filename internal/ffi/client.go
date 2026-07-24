@@ -95,11 +95,13 @@ func (c *Client) Disconnect() error {
 		return statusToError(statusNotConnected, "disconnect")
 	}
 
+	// The native aa_disconnect unconditionally reclaims the handle
+	// (Box::from_raw frees it) before computing its return status, so a
+	// non-OK status does NOT mean the free was skipped. Clear c.handle the
+	// moment the native free has been invoked — regardless of status — or a
+	// later call would use freed memory and a repeat Disconnect would
+	// double-free (AAASM-5052).
 	status := c.binding.disconnect(c.handle)
-	if err := statusToError(status, "disconnect"); err != nil {
-		return err
-	}
-
 	c.handle = nil
-	return nil
+	return statusToError(status, "disconnect")
 }
