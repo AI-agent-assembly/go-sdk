@@ -249,11 +249,16 @@ func TestQuickStartWrappingDoesNotDisarmTheOriginalTool(t *testing.T) {
 	original := []Tool{tool}
 
 	governed := WrapTools(original, client)
-	if _, err := governed[0].Call(negativeControlContext(), "denied"); err == nil {
-		t.Fatal("governed call was expected to be denied")
-	}
+	_, err := governed[0].Call(negativeControlContext(), "denied")
+
+	// Absence of the effect first, as in every other control here: asserting
+	// the error first would abort this test before the line below whenever
+	// enforcement is removed, leaving the load-bearing check unexercised.
 	if tool.occurred() {
 		t.Fatal("the governed call ran the tool body")
+	}
+	if err == nil {
+		t.Fatal("governed call was expected to be denied")
 	}
 
 	// Same policy, same process: calling the retained original bypasses it.
