@@ -25,6 +25,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 // fileSideEffectTool is a Tool whose Call really writes a file. Nothing is
@@ -125,6 +126,11 @@ func (n *networkSideEffectTool) occurred() bool {
 type policyGovernanceClient struct {
 	denyTools map[string]string
 
+	// AssemblyTool.Call records the result from a goroutine, so a test that
+	// asserts over recordRequests must wait on this rather than race it.
+	recorded chan struct{}
+	once     sync.Once
+
 	mu       sync.Mutex
 	checks   []CheckRequest
 	records  []RecordRequest
@@ -135,7 +141,7 @@ func newPolicyGovernanceClient(denied map[string]string) *policyGovernanceClient
 	if denied == nil {
 		denied = map[string]string{}
 	}
-	return &policyGovernanceClient{denyTools: denied}
+	return &policyGovernanceClient{denyTools: denied, recorded: make(chan struct{})}
 }
 
 func (c *policyGovernanceClient) Check(_ context.Context, request CheckRequest) (Decision, error) {
@@ -159,7 +165,32 @@ func (c *policyGovernanceClient) RecordResult(_ context.Context, request RecordR
 	c.mu.Lock()
 	c.records = append(c.records, request)
 	c.mu.Unlock()
+	c.once.Do(func() { close(c.recorded) })
 	return nil
 }
 
+// awaitRecord blocks until the post-execution audit record has been written,
+// or fails the test. Never call it on a denied path — the wrapper returns
+// before the record goroutine is started, so it would block forever.
+func (c *policyGovernanceClient) awaitRecord(t *testing.T) {
+	t.Helper()
+	select {
+	case <-c.recorded:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for the post-execution audit record")
+	}
+}
+
 func (c *policyGovernanceClient) Close() error { return nil }
+
+func (c *policyGovernanceClient) checkRequests() []CheckRequest {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]CheckRequest(nil), c.checks...)
+}
+
+func (c *policyGovernanceClient) recordRequests() []RecordRequest {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]RecordRequest(nil), c.records...)
+}

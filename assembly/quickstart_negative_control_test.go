@@ -139,3 +139,66 @@ func TestQuickStartNetworkNegativeControl(t *testing.T) {
 		}
 	})
 }
+
+func TestQuickStartDenyIsAttributable(t *testing.T) {
+	t.Run("TheDenyCarriesTheAgentAndToolIdentity", func(t *testing.T) {
+		tool := newFileSideEffectTool(t)
+		client := newPolicyGovernanceClient(map[string]string{"write_to_disk": "policy forbids disk writes"})
+
+		governed := WrapTools([]Tool{tool}, client)
+		_, err := governed[0].Call(negativeControlContext(), "denied")
+
+		if tool.occurred() {
+			t.Fatal("denied write created the file")
+		}
+		var violation *PolicyViolationError
+		if !errors.As(err, &violation) {
+			t.Fatalf("err = %v, want *PolicyViolationError", err)
+		}
+
+		checks := client.checkRequests()
+		if len(checks) != 1 {
+			t.Fatalf("got %d policy checks, want 1", len(checks))
+		}
+		// Identity as the SDK presented it to the policy gateway. An anonymous
+		// deny is not usable audit evidence.
+		if checks[0].ToolName != "write_to_disk" {
+			t.Fatalf("check.ToolName = %q, want %q", checks[0].ToolName, "write_to_disk")
+		}
+		if checks[0].AgentID != negativeControlAgentID {
+			t.Fatalf("check.AgentID = %q, want %q", checks[0].AgentID, negativeControlAgentID)
+		}
+		if checks[0].RunID == "" {
+			t.Fatal("check.RunID is empty: the deny cannot be correlated with the rest of the trace")
+		}
+		if checks[0].Args != "denied" {
+			t.Fatalf("check.Args = %q, want %q", checks[0].Args, "denied")
+		}
+	})
+
+	t.Run("AnAllowedCallIsAuditedUnderTheSameIdentity", func(t *testing.T) {
+		tool := newFileSideEffectTool(t)
+		client := newPolicyGovernanceClient(nil)
+
+		governed := WrapTools([]Tool{tool}, client)
+		if _, err := governed[0].Call(negativeControlContext(), "allowed"); err != nil {
+			t.Fatalf("allowed call returned an error: %v", err)
+		}
+		client.awaitRecord(t)
+
+		if !tool.occurred() {
+			t.Fatal("allowed write did not create the file")
+		}
+		records := client.recordRequests()
+		if len(records) != 1 {
+			t.Fatalf("got %d audit records, want 1", len(records))
+		}
+		if records[0].ToolName != "write_to_disk" {
+			t.Fatalf("record.ToolName = %q, want %q", records[0].ToolName, "write_to_disk")
+		}
+		if records[0].RunID != client.checkRequests()[0].RunID {
+			t.Fatalf("record.RunID = %q does not match the checked run %q",
+				records[0].RunID, client.checkRequests()[0].RunID)
+		}
+	})
+}
