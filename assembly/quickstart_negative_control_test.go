@@ -90,3 +90,52 @@ func TestQuickStartFilesystemNegativeControl(t *testing.T) {
 		}
 	})
 }
+
+func TestQuickStartNetworkNegativeControl(t *testing.T) {
+	t.Run("PositiveControl_AllowedEgressReachesTheListener", func(t *testing.T) {
+		tool := newNetworkSideEffectTool(t)
+		client := newPolicyGovernanceClient(nil)
+
+		governed := WrapTools([]Tool{tool}, client)
+		if _, err := governed[0].Call(negativeControlContext(), "allowed-payload"); err != nil {
+			t.Fatalf("allowed call returned an error: %v", err)
+		}
+
+		got := tool.requests()
+		if len(got) != 1 || got[0] != "allowed-payload" {
+			t.Fatalf("listener received %q, want exactly [allowed-payload]", got)
+		}
+	})
+
+	t.Run("NegativeControl_DeniedEgressNeverReachesTheListener", func(t *testing.T) {
+		tool := newNetworkSideEffectTool(t)
+		client := newPolicyGovernanceClient(map[string]string{"send_http_request": "egress denied"})
+
+		governed := WrapTools([]Tool{tool}, client)
+		_, err := governed[0].Call(negativeControlContext(), "denied-payload")
+
+		// The listener is live and was reachable throughout — the positive
+		// control proves that on the same fixture — so zero received requests
+		// is evidence the egress did not happen, not that it could not have.
+		if tool.occurred() {
+			t.Fatalf("listener received %q despite the deny", tool.requests())
+		}
+
+		var violation *PolicyViolationError
+		if !errors.As(err, &violation) {
+			t.Fatalf("err = %v, want *PolicyViolationError", err)
+		}
+	})
+
+	t.Run("Falsification_TheSameEgressUngovernedReachesTheListener", func(t *testing.T) {
+		tool := newNetworkSideEffectTool(t)
+
+		if _, err := tool.Call(context.Background(), "ungoverned-payload"); err != nil {
+			t.Fatalf("ungoverned call returned an error: %v", err)
+		}
+
+		if !tool.occurred() {
+			t.Fatal("ungoverned egress did not reach the listener")
+		}
+	})
+}

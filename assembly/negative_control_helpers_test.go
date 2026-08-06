@@ -7,7 +7,8 @@ package assembly
 // asserts inner.calls == 0 proves the wrapper did not invoke a func value it
 // holds. Neither shows that the effect the tool exists to produce did not
 // happen. These helpers give a denied tool a real, externally-observable
-// effect — a file on disk — so a deny can be asserted as the absence of that effect and the
+// effect — a file on disk, an HTTP request delivered to a live httptest
+// listener — so a deny can be asserted as the absence of that effect and the
 // matching allow as its presence.
 //
 // Every control built on this fixture is used as a pair: without the positive
@@ -16,8 +17,12 @@ package assembly
 
 import (
 	"context"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -58,6 +63,59 @@ func (f *fileSideEffectTool) content(t *testing.T) string {
 		return ""
 	}
 	return string(data)
+}
+
+// networkSideEffectTool is a Tool whose Call really performs an HTTP POST
+// against a live loopback listener that records every request it receives. A
+// denied tool must leave requests() empty; because the positive control drives
+// the same listener, an empty log is evidence the egress did not happen rather
+// than evidence it could not have.
+type networkSideEffectTool struct {
+	server *httptest.Server
+
+	mu       sync.Mutex
+	received []string
+}
+
+func newNetworkSideEffectTool(t *testing.T) *networkSideEffectTool {
+	t.Helper()
+	tool := &networkSideEffectTool{}
+	tool.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		tool.mu.Lock()
+		tool.received = append(tool.received, string(body))
+		tool.mu.Unlock()
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	t.Cleanup(tool.server.Close)
+	return tool
+}
+
+func (n *networkSideEffectTool) Name() string        { return "send_http_request" }
+func (n *networkSideEffectTool) Description() string { return "POSTs its input to a fixed URL" }
+
+func (n *networkSideEffectTool) Call(ctx context.Context, input string) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, n.server.URL, strings.NewReader(input))
+	if err != nil {
+		return "", err
+	}
+	resp, err := n.server.Client().Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	return resp.Status, nil
+}
+
+// requests returns the bodies the listener actually received, in arrival order.
+func (n *networkSideEffectTool) requests() []string {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return append([]string(nil), n.received...)
+}
+
+func (n *networkSideEffectTool) occurred() bool {
+	return len(n.requests()) > 0
 }
 
 // policyGovernanceClient denies exactly the named tools and records the
