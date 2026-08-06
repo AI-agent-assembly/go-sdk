@@ -237,3 +237,37 @@ func TestQuickStartDegradedPathCannotLookProtected(t *testing.T) {
 		}
 	})
 }
+
+func TestQuickStartWrappingDoesNotDisarmTheOriginalTool(t *testing.T) {
+	// docs/core-concepts.md is explicit that the in-process wrapper "is not a
+	// trust boundary on its own". WrapTools returns a new slice and leaves the
+	// caller holding a live reference to the unwrapped Tool, so the deny that
+	// the negative controls above prove is scoped to the governed handle only.
+	// Stating that as an executable control keeps the boundary honest.
+	tool := newFileSideEffectTool(t)
+	client := newPolicyGovernanceClient(map[string]string{"write_to_disk": "policy forbids disk writes"})
+	original := []Tool{tool}
+
+	governed := WrapTools(original, client)
+	if _, err := governed[0].Call(negativeControlContext(), "denied"); err == nil {
+		t.Fatal("governed call was expected to be denied")
+	}
+	if tool.occurred() {
+		t.Fatal("the governed call ran the tool body")
+	}
+
+	// Same policy, same process: calling the retained original bypasses it.
+	if _, err := original[0].Call(context.Background(), "bypassed"); err != nil {
+		t.Fatalf("direct call on the original tool returned an error: %v", err)
+	}
+	if !tool.occurred() {
+		t.Fatal("the direct call did not run: the bypass claim above is unproven")
+	}
+	if got := tool.content(t); got != "bypassed" {
+		t.Fatalf("file content = %q, want %q", got, "bypassed")
+	}
+	if len(client.checkRequests()) != 1 {
+		t.Fatalf("got %d policy checks, want 1: the direct call must not be gated",
+			len(client.checkRequests()))
+	}
+}
