@@ -202,3 +202,38 @@ func TestQuickStartDenyIsAttributable(t *testing.T) {
 		}
 	})
 }
+
+func TestQuickStartDegradedPathCannotLookProtected(t *testing.T) {
+	t.Run("NilClientUnderTheDefaultPostureDeniesRatherThanRunning", func(t *testing.T) {
+		// docs/quick-start.md's "Putting it together" program passes a nil
+		// client — WrapTools(tools, nil) — under the default fail-closed
+		// posture. AAASM-5526 forbids a degraded path presenting as protected;
+		// this holds it to the same standard as every other control here.
+		tool := newFileSideEffectTool(t)
+
+		governed := WrapTools([]Tool{tool}, nil)
+		_, err := governed[0].Call(negativeControlContext(), "degraded")
+
+		if tool.occurred() {
+			t.Fatalf("no governance client was available, yet %s was written", tool.path)
+		}
+		if !errors.Is(err, ErrGovernanceUnavailable) {
+			t.Fatalf("err = %v, want ErrGovernanceUnavailable", err)
+		}
+	})
+
+	t.Run("NilClientWithFailOpenRunsTheToolAndSaysSo", func(t *testing.T) {
+		// The documented opt-out. It must really pass through — otherwise the
+		// control above would be indistinguishable from "the tool never works".
+		tool := newFileSideEffectTool(t)
+
+		governed := WrapTools([]Tool{tool}, nil, WithFailClosed(false))
+		if _, err := governed[0].Call(negativeControlContext(), "passthrough"); err != nil {
+			t.Fatalf("fail-open passthrough returned an error: %v", err)
+		}
+
+		if !tool.occurred() {
+			t.Fatal("fail-open passthrough did not run the tool")
+		}
+	})
+}
