@@ -77,29 +77,47 @@ func (t *AssemblyTool) Call(ctx context.Context, input string) (string, error) {
 	// until the operator resumes it. Skipped when no subscriber is wired or
 	// the call carries no trace identity (so there is no tracked op).
 	if err := t.runOpControlGate(ctx); err != nil {
+		t.recordOutcome(ctx, "", err)
 		return "", err
 	}
 
 	if err := t.runGovernanceGate(ctx, input, runID); err != nil {
+		t.recordOutcome(ctx, "", err)
 		return "", err
 	}
 
 	result, err := t.inner.Call(ctx, input)
-
-	if t.client != nil {
-		recordCtx := context.WithoutCancel(ctx)
-		go func() {
-			_ = t.client.RecordResult(recordCtx, RecordRequest{
-				ToolName: t.inner.Name(),
-				TraceID:  TraceIDFromContext(recordCtx),
-				RunID:    RunIDFromContext(recordCtx),
-				Result:   result,
-				Error:    errString(err),
-			})
-		}()
-	}
+	t.recordOutcome(ctx, result, err)
 
 	return result, err
+}
+
+// recordOutcome emits the post-decision audit record for one governed call.
+//
+// It runs on the denied paths as well as the executed one (AAASM-5665). A deny
+// that emits no record leaves no audit artifact to read: the outcome is
+// indistinguishable from a call that was never attempted, so anything asserting
+// "denied before execution" has only the returned error — an in-process value
+// that never reaches an auditor — to go on. A denied call carries an empty
+// Result and the short-circuit error in Error.
+//
+// This is only reachable after [AssemblyTool.Call] has established a non-nil
+// client, so it needs no nil guard. The nil-client path emits nothing by
+// necessity rather than by choice: the client *is* the audit sink, so when it
+// is absent there is nowhere to record to. Under the enforce posture that path
+// still denies the call (see shouldDenyOnUnavailable), so the deny is real but
+// Unmeasured in audit evidence.
+func (t *AssemblyTool) recordOutcome(ctx context.Context, result string, callErr error) {
+	recordCtx := context.WithoutCancel(ctx)
+	go func() {
+		_ = t.client.RecordResult(recordCtx, RecordRequest{
+			ToolName: t.inner.Name(),
+			TraceID:  TraceIDFromContext(recordCtx),
+			RunID:    RunIDFromContext(recordCtx),
+			Result:   result,
+			Error:    errString(callErr),
+		})
+	}()
 }
 
 // runGovernanceGate runs the pre-execution policy check and returns a non-nil
