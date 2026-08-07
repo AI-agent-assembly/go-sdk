@@ -3,6 +3,7 @@ package assembly
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -133,6 +134,55 @@ func TestTerminatedOpDeniesBeforeGatewayCheck(t *testing.T) {
 	// Short-circuit: a terminated op must halt before the gateway is queried.
 	if client.wasChecked() {
 		t.Fatal("expected gateway Check to be skipped for a terminated op")
+	}
+}
+
+// TestTerminatedOpDenyCallsRecordResult pins the op-control branch of the
+// AAASM-5665 fix. The governance-deny branch is covered by
+// TestQuickStartDenyIsAttributable; without this, deleting the recordOutcome
+// call from the op-control branch alone leaves the whole suite green, so half
+// the fix would have no regression test.
+//
+// It asserts the wrapper's call to RecordResult, which is a test double here.
+// The production client discards the record — see ffiGovernanceClient — so a
+// terminated-op deny is Unmeasured in audit evidence on the shipped path.
+func TestTerminatedOpDenyCallsRecordResult(t *testing.T) {
+	t.Parallel()
+
+	opControl := newFakeOpControl()
+	opControl.terminated["trace-9:span-9"] = true
+	client := newPolicyGovernanceClient(nil)
+	opts := defaultRuntimeOptions()
+	opts.opControl = opControl
+	wrapped := newAssemblyTool(stubTool{name: "web_search", result: "unused"}, client, opts)
+
+	ctx := WithOpID(WithTraceID(context.Background(), "trace-9"), "trace-9:span-9")
+	_, err := wrapped.Call(ctx, "query")
+
+	var terminated *OpTerminatedError
+	if !errors.As(err, &terminated) {
+		t.Fatalf("expected OpTerminatedError, got %v", err)
+	}
+
+	client.awaitRecord(t)
+	records := client.recordRequests()
+	if len(records) != 1 {
+		t.Fatalf("got %d records for the terminated-op deny, want 1", len(records))
+	}
+	if records[0].ToolName != "web_search" {
+		t.Fatalf("record.ToolName = %q, want %q", records[0].ToolName, "web_search")
+	}
+	if !strings.Contains(records[0].Error, "terminated") {
+		t.Fatalf("record.Error = %q, want it to carry the terminate reason", records[0].Error)
+	}
+	if records[0].Result != "" {
+		t.Fatalf("record.Result = %q, want empty: the tool body never ran", records[0].Result)
+	}
+	// The gateway was never queried, so this record is the only thing the
+	// wrapper emitted about the call at all.
+	if len(client.checkRequests()) != 0 {
+		t.Fatalf("got %d policy checks, want 0: a terminated op must short-circuit before the gateway",
+			len(client.checkRequests()))
 	}
 }
 
