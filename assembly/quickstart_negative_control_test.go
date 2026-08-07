@@ -194,10 +194,16 @@ func TestQuickStartDenyIsAttributable(t *testing.T) {
 		}
 
 		// The load-bearing assertion for AAASM-5665, and the one the subtest
-		// above cannot make: the *persisted audit record*, not the returned
-		// error and not the policy query. Before this, a deny emitted nothing
-		// — an auditor reading the record stream could not tell a denied call
-		// from a call that was never attempted.
+		// above cannot make: the RecordRequest the wrapper hands the
+		// governance client on the denied path, rather than the returned error
+		// or the policy query. Before this the wrapper returned before
+		// RecordResult was called at all.
+		//
+		// Scope of the evidence: this is a test double's in-process slice, not
+		// a persisted artifact. The only production client discards the record
+		// (ffiGovernanceClient.RecordResult), so a deny is Unmeasured in audit
+		// evidence on the shipped path. What this control pins is the wrapper's
+		// call — the part fixable without a new FFI capability.
 		client.awaitRecord(t)
 		records := client.recordRequests()
 		if len(records) != 1 {
