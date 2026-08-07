@@ -142,7 +142,7 @@ func TestQuickStartNetworkNegativeControl(t *testing.T) {
 }
 
 func TestQuickStartDenyIsAttributable(t *testing.T) {
-	t.Run("TheDenyCarriesTheAgentAndToolIdentity", func(t *testing.T) {
+	t.Run("ThePolicyQueryCarriesTheAgentAndToolIdentity", func(t *testing.T) {
 		tool := newFileSideEffectTool(t)
 		client := newPolicyGovernanceClient(map[string]string{"write_to_disk": "policy forbids disk writes"})
 
@@ -161,8 +161,9 @@ func TestQuickStartDenyIsAttributable(t *testing.T) {
 		if len(checks) != 1 {
 			t.Fatalf("got %d policy checks, want 1", len(checks))
 		}
-		// Identity as the SDK presented it to the policy gateway. An anonymous
-		// deny is not usable audit evidence.
+		// Identity as the SDK presented it to the policy gateway. This is the
+		// deny's *decision input*, not audit evidence — the audit record the
+		// deny emits is a separate artifact, asserted in the subtest below.
 		if checks[0].ToolName != "write_to_disk" {
 			t.Fatalf("check.ToolName = %q, want %q", checks[0].ToolName, "write_to_disk")
 		}
@@ -226,7 +227,7 @@ func TestQuickStartDenyIsAttributable(t *testing.T) {
 		// tracked separately as a wire-contract change.
 	})
 
-	t.Run("AnAllowedCallIsAuditedUnderTheSameIdentity", func(t *testing.T) {
+	t.Run("AnAllowedCallIsAuditedUnderTheSameRunID", func(t *testing.T) {
 		tool := newFileSideEffectTool(t)
 		client := newPolicyGovernanceClient(nil)
 
