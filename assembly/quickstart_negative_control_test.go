@@ -24,6 +24,7 @@ package assembly
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -174,6 +175,55 @@ func TestQuickStartDenyIsAttributable(t *testing.T) {
 		if checks[0].Args != "denied" {
 			t.Fatalf("check.Args = %q, want %q", checks[0].Args, "denied")
 		}
+	})
+
+	t.Run("TheDeniedCallEmitsAnAuditRecordNamingTheToolAndRun", func(t *testing.T) {
+		tool := newFileSideEffectTool(t)
+		client := newPolicyGovernanceClient(map[string]string{"write_to_disk": "policy forbids disk writes"})
+
+		governed := WrapTools([]Tool{tool}, client)
+		_, err := governed[0].Call(negativeControlContext(), "denied")
+
+		if tool.occurred() {
+			t.Fatal("denied write created the file")
+		}
+		var violation *PolicyViolationError
+		if !errors.As(err, &violation) {
+			t.Fatalf("err = %v, want *PolicyViolationError", err)
+		}
+
+		// The load-bearing assertion for AAASM-5665, and the one the subtest
+		// above cannot make: the *persisted audit record*, not the returned
+		// error and not the policy query. Before this, a deny emitted nothing
+		// — an auditor reading the record stream could not tell a denied call
+		// from a call that was never attempted.
+		client.awaitRecord(t)
+		records := client.recordRequests()
+		if len(records) != 1 {
+			t.Fatalf("got %d audit records for the denied call, want 1", len(records))
+		}
+		if records[0].ToolName != "write_to_disk" {
+			t.Fatalf("record.ToolName = %q, want %q", records[0].ToolName, "write_to_disk")
+		}
+		if records[0].RunID != client.checkRequests()[0].RunID {
+			t.Fatalf("record.RunID = %q does not match the checked run %q",
+				records[0].RunID, client.checkRequests()[0].RunID)
+		}
+		// Distinguishes "denied before execution" from "ran and returned an
+		// empty string": the record carries the short-circuit error, and the
+		// deny reason inside it, while Result stays empty.
+		if !strings.Contains(records[0].Error, "policy forbids disk writes") {
+			t.Fatalf("record.Error = %q, want it to carry the deny reason", records[0].Error)
+		}
+		if records[0].Result != "" {
+			t.Fatalf("record.Result = %q, want empty: the tool body never ran", records[0].Result)
+		}
+
+		// Deliberately not asserted: agent identity. RecordRequest carries no
+		// AgentID field, so the audit record names the tool and the run but
+		// not the agent. Claiming otherwise here is exactly the over-claim
+		// AAASM-5665 exists to remove; carrying identity onto this path is
+		// tracked separately as a wire-contract change.
 	})
 
 	t.Run("AnAllowedCallIsAuditedUnderTheSameIdentity", func(t *testing.T) {

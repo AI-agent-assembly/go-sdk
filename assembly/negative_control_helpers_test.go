@@ -169,9 +169,10 @@ func (c *policyGovernanceClient) RecordResult(_ context.Context, request RecordR
 	return nil
 }
 
-// awaitRecord blocks until the post-execution audit record has been written,
-// or fails the test. Never call it on a denied path — the wrapper returns
-// before the record goroutine is started, so it would block forever.
+// awaitRecord blocks until the audit record has been written, or fails the
+// test. Safe on a denied path as well as an executed one: since AAASM-5665 the
+// wrapper records the outcome of a deny too, so the record goroutine is
+// started either way.
 func (c *policyGovernanceClient) awaitRecord(t *testing.T) {
 	t.Helper()
 	select {
