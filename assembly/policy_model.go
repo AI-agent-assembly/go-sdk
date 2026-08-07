@@ -24,17 +24,26 @@ type ApprovalRequest struct {
 	RunID string
 }
 
-// RecordRequest stores tool execution results for governance and audit.
+// RecordRequest reports the outcome of one governed tool call for audit.
+//
+// Since AAASM-5665 the wrapper emits one for a call that was denied before
+// execution as well as one that ran, so the struct no longer implies the tool
+// body executed. A denied call carries an empty Result and the short-circuit
+// error in Error. There is deliberately no discriminator field yet: adding one
+// is a wire-contract change, so a consumer that must tell "denied before
+// execution" from "ran and returned an error" has only the Error text to go on.
 type RecordRequest struct {
-	// ToolName is the name of the tool that was executed.
+	// ToolName is the name of the tool the call targeted.
 	ToolName string
 	// TraceID is the distributed trace identifier for correlation.
 	TraceID string
 	// RunID is a stable identifier for the current execution run.
 	RunID string
-	// Result is the string output returned by the tool.
+	// Result is the string output returned by the tool, empty when the call was
+	// denied before execution.
 	Result string
-	// Error is the error message if the tool call failed, or empty on success.
+	// Error is the tool's error message, the denial reason when the call was
+	// denied before execution, or empty on success.
 	Error string
 }
 

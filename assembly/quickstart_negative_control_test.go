@@ -24,6 +24,7 @@ package assembly
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -141,7 +142,7 @@ func TestQuickStartNetworkNegativeControl(t *testing.T) {
 }
 
 func TestQuickStartDenyIsAttributable(t *testing.T) {
-	t.Run("TheDenyCarriesTheAgentAndToolIdentity", func(t *testing.T) {
+	t.Run("ThePolicyQueryCarriesTheAgentAndToolIdentity", func(t *testing.T) {
 		tool := newFileSideEffectTool(t)
 		client := newPolicyGovernanceClient(map[string]string{"write_to_disk": "policy forbids disk writes"})
 
@@ -160,8 +161,9 @@ func TestQuickStartDenyIsAttributable(t *testing.T) {
 		if len(checks) != 1 {
 			t.Fatalf("got %d policy checks, want 1", len(checks))
 		}
-		// Identity as the SDK presented it to the policy gateway. An anonymous
-		// deny is not usable audit evidence.
+		// Identity as the SDK presented it to the policy gateway. This is the
+		// deny's *decision input*, not audit evidence — the audit record the
+		// deny emits is a separate artifact, asserted in the subtest below.
 		if checks[0].ToolName != "write_to_disk" {
 			t.Fatalf("check.ToolName = %q, want %q", checks[0].ToolName, "write_to_disk")
 		}
@@ -176,7 +178,62 @@ func TestQuickStartDenyIsAttributable(t *testing.T) {
 		}
 	})
 
-	t.Run("AnAllowedCallIsAuditedUnderTheSameIdentity", func(t *testing.T) {
+	t.Run("TheDeniedCallEmitsAnAuditRecordNamingTheToolAndRun", func(t *testing.T) {
+		tool := newFileSideEffectTool(t)
+		client := newPolicyGovernanceClient(map[string]string{"write_to_disk": "policy forbids disk writes"})
+
+		governed := WrapTools([]Tool{tool}, client)
+		_, err := governed[0].Call(negativeControlContext(), "denied")
+
+		if tool.occurred() {
+			t.Fatal("denied write created the file")
+		}
+		var violation *PolicyViolationError
+		if !errors.As(err, &violation) {
+			t.Fatalf("err = %v, want *PolicyViolationError", err)
+		}
+
+		// The load-bearing assertion for AAASM-5665, and the one the subtest
+		// above cannot make: the RecordRequest the wrapper hands the
+		// governance client on the denied path, rather than the returned error
+		// or the policy query. Before this the wrapper returned before
+		// RecordResult was called at all.
+		//
+		// Scope of the evidence: this is a test double's in-process slice, not
+		// a persisted artifact. The only production client discards the record
+		// (ffiGovernanceClient.RecordResult), so a deny is Unmeasured in audit
+		// evidence on the shipped path. What this control pins is the wrapper's
+		// call — the part fixable without a new FFI capability.
+		client.awaitRecord(t)
+		records := client.recordRequests()
+		if len(records) != 1 {
+			t.Fatalf("got %d audit records for the denied call, want 1", len(records))
+		}
+		if records[0].ToolName != "write_to_disk" {
+			t.Fatalf("record.ToolName = %q, want %q", records[0].ToolName, "write_to_disk")
+		}
+		if records[0].RunID != client.checkRequests()[0].RunID {
+			t.Fatalf("record.RunID = %q does not match the checked run %q",
+				records[0].RunID, client.checkRequests()[0].RunID)
+		}
+		// Distinguishes "denied before execution" from "ran and returned an
+		// empty string": the record carries the short-circuit error, and the
+		// deny reason inside it, while Result stays empty.
+		if !strings.Contains(records[0].Error, "policy forbids disk writes") {
+			t.Fatalf("record.Error = %q, want it to carry the deny reason", records[0].Error)
+		}
+		if records[0].Result != "" {
+			t.Fatalf("record.Result = %q, want empty: the tool body never ran", records[0].Result)
+		}
+
+		// Deliberately not asserted: agent identity. RecordRequest carries no
+		// AgentID field, so the audit record names the tool and the run but
+		// not the agent. Claiming otherwise here is exactly the over-claim
+		// AAASM-5665 exists to remove; carrying identity onto this path is
+		// tracked separately as a wire-contract change.
+	})
+
+	t.Run("AnAllowedCallIsAuditedUnderTheSameRunID", func(t *testing.T) {
 		tool := newFileSideEffectTool(t)
 		client := newPolicyGovernanceClient(nil)
 

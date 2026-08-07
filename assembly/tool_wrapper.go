@@ -77,29 +77,54 @@ func (t *AssemblyTool) Call(ctx context.Context, input string) (string, error) {
 	// until the operator resumes it. Skipped when no subscriber is wired or
 	// the call carries no trace identity (so there is no tracked op).
 	if err := t.runOpControlGate(ctx); err != nil {
+		t.recordOutcome(ctx, "", err)
 		return "", err
 	}
 
 	if err := t.runGovernanceGate(ctx, input, runID); err != nil {
+		t.recordOutcome(ctx, "", err)
 		return "", err
 	}
 
 	result, err := t.inner.Call(ctx, input)
-
-	if t.client != nil {
-		recordCtx := context.WithoutCancel(ctx)
-		go func() {
-			_ = t.client.RecordResult(recordCtx, RecordRequest{
-				ToolName: t.inner.Name(),
-				TraceID:  TraceIDFromContext(recordCtx),
-				RunID:    RunIDFromContext(recordCtx),
-				Result:   result,
-				Error:    errString(err),
-			})
-		}()
-	}
+	t.recordOutcome(ctx, result, err)
 
 	return result, err
+}
+
+// recordOutcome calls the governance client's RecordResult for one governed
+// call. A denied call carries an empty Result and the short-circuit error in
+// Error.
+//
+// It runs on the denied paths as well as the executed one (AAASM-5665).
+// Previously Call returned at the gate branches before RecordResult was
+// invoked at all, so a deny could not reach an audit sink even in principle.
+//
+// What this does not do is make a deny observable in a released binary. The
+// only production GovernanceClient is ffiGovernanceClient, whose RecordResult
+// discards its argument and returns nil, and the FFI event channel that its
+// comment defers to carries only the boot "register" event — no tool-call
+// event. So on the shipped path a denied call remains Unmeasured in audit
+// evidence (ADR 0033 §6). This method makes the call site correct; supplying a
+// sink that retains the record is a separate capability, not part of this fix.
+//
+// This is only reachable after [AssemblyTool.Call] has established a non-nil
+// client, so it needs no nil guard. The nil-client path does not call
+// RecordResult at all, for a different reason: the client *is* the sink, so
+// when it is absent there is nothing to call. Under the enforce posture that
+// path still denies the call (see shouldDenyOnUnavailable), so that deny is
+// Unmeasured too.
+func (t *AssemblyTool) recordOutcome(ctx context.Context, result string, callErr error) {
+	recordCtx := context.WithoutCancel(ctx)
+	go func() {
+		_ = t.client.RecordResult(recordCtx, RecordRequest{
+			ToolName: t.inner.Name(),
+			TraceID:  TraceIDFromContext(recordCtx),
+			RunID:    RunIDFromContext(recordCtx),
+			Result:   result,
+			Error:    errString(callErr),
+		})
+	}()
 }
 
 // runGovernanceGate runs the pre-execution policy check and returns a non-nil
