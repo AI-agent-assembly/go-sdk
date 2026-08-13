@@ -212,17 +212,24 @@ func TestShippedClientDeclaringNoRetentionReachesNothing(t *testing.T) {
 		name     string
 		decision int32
 		reason   string
-		// discriminator is the substring only the RECORD path can carry on this
-		// branch. It MUST differ per branch: on the denied path recordOutcome is
-		// handed result="" and the short-circuit error, so asserting on the tool
-		// RESULT there is an assertion that cannot fail — review of #198 measured
-		// the leaking mutation turning "allowed" red while "denied" stayed green.
-		// The deny reason travels in RecordRequest.Error, so that is the
-		// discriminator with real falsifying power on this branch.
-		discriminator string
+		// The discriminator is OBSERVED, not declared: recordDecision and
+		// recordField say which decision to replay through the wrapper and which
+		// RecordRequest field to read the answer out of.
+		//
+		// It MUST differ per branch. On the denied path recordOutcome is handed
+		// result="", so asserting on the tool RESULT there is an assertion that
+		// cannot fail — review of #198 measured the leaking mutation turning
+		// "allowed" red while "denied" stayed green. The deny reason travels in
+		// RecordRequest.Error, so that is the discriminator with real falsifying
+		// power on that branch.
+		recordDecision Decision
+		recordField    string
 	}{
-		{"allowed", ffi.DecisionAllow, "", auditProbePayload + "-RESULT"},
-		{"denied", ffi.DecisionDeny, auditProbePayload + "-DENY-REASON", auditProbePayload + "-DENY-REASON"},
+		{"allowed", ffi.DecisionAllow, "", Decision{}, "Result"},
+		{
+			"denied", ffi.DecisionDeny, auditProbePayload + "-DENY-REASON",
+			Decision{Denied: true, Reason: auditProbePayload + "-DENY-REASON"}, "Error",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			capClient, crossings := ffi.NewRecordingClient(tc.decision, tc.reason)
@@ -265,16 +272,20 @@ func TestShippedClientDeclaringNoRetentionReachesNothing(t *testing.T) {
 			// swept, not just the event one — a leak that took the query channel
 			// would otherwise go unseen.
 			//
-			// The discriminator must be reachable on this branch. Guard it: if
-			// the deny reason ever stops reaching RecordRequest.Error, this
-			// assertion silently becomes vacuous again, which is precisely the
-			// defect being fixed here.
-			if !strings.Contains(recordedDiscriminatorSource(tc.name, tc.reason), auditProbePayload) {
-				t.Fatalf("the %s branch has no discriminator the record path could carry; "+
-					"its leak assertion below cannot fail", tc.name)
+			// The discriminator must be reachable on this branch, and reachability
+			// is MEASURED against the production wrapper rather than assumed. If
+			// the probe payload ever stops reaching this RecordRequest field —
+			// because the deny short-circuits with a generic error, or because
+			// the error text drops the reason — the guard fires here instead of
+			// the leak assertion below quietly becoming vacuous again.
+			discriminator := observedRecordField(t, tc.recordDecision, tc.recordField)
+			if !strings.Contains(discriminator, auditProbePayload) {
+				t.Fatalf("the %s branch's RecordRequest.%s is %q, which does not carry the probe "+
+					"payload; nothing the record path emits on this branch is distinguishable, so "+
+					"the leak assertion below cannot fail", tc.name, tc.recordField, discriminator)
 			}
 			for _, crossing := range boundaryCrossings(crossings) {
-				if strings.Contains(crossing, tc.discriminator) {
+				if strings.Contains(crossing, discriminator) {
 					t.Errorf("a client declaring %q leaked the audit record across the native "+
 						"boundary: %q — the declaration and the behaviour disagree",
 						AuditSinkDiscarded, crossing)
@@ -320,16 +331,44 @@ func TestForwardingClientDoesReachTheBoundary(t *testing.T) {
 	}
 }
 
-// recordedDiscriminatorSource returns the field of RecordRequest that carries
-// this branch's discriminator, so the test can prove the discriminator is
-// reachable rather than assume it. On the allowed path that is the tool result;
-// on the denied path the tool never runs and the result is empty, so it is the
-// short-circuit error text (AAASM-5731).
-func recordedDiscriminatorSource(branch, reason string) string {
-	if branch == "denied" {
-		return (&PolicyViolationError{ToolName: "web_search", Reason: reason}).Error()
+// observedRecordField runs one governed call through the PRODUCTION wrapper
+// against a capturing client and returns what recordOutcome actually put in the
+// requested field of RecordRequest.
+//
+// It observes rather than reconstructs, and that is the whole point. The
+// previous version built a PolicyViolationError itself and compared against
+// that, so it could only catch a change to PolicyViolationError.Error() — not
+// the failure mode its own comment promised to catch. Review of #198 measured
+// the gap: make the deny short-circuit hand recordOutcome a GENERIC error and
+// the reason never reaches RecordRequest.Error, yet the guard stayed silent and
+// the denied branch went back to asserting nothing. A control that does not
+// move with the step under test is the same defect as the vacuous assertion it
+// replaced, one level up.
+//
+// The capturing client is the downstream boundary here, not a stand-in for the
+// code under test: what is being observed is the WRAPPER's output, which is the
+// same whichever client receives it — and the production client cannot be used
+// to observe it, because it discards.
+func observedRecordField(t *testing.T, decision Decision, field string) string {
+	t.Helper()
+
+	records := make(chan RecordRequest, 1)
+	client := &coverageGovernanceClient{checkDecision: decision, recordRequests: records}
+	inner := &auditProbeTool{name: "web_search", result: auditProbePayload + "-RESULT"}
+	wrapped := WrapTools([]Tool{inner}, client)
+	_, _ = wrapped[0].Call(context.Background(), `{"q":"`+auditProbePayload+`"}`)
+
+	select {
+	case request := <-records:
+		if field == "Error" {
+			return request.Error
+		}
+		return request.Result
+	case <-time.After(2 * time.Second):
+		t.Fatalf("the wrapper never called RecordResult for a %+v decision; the branch has no "+
+			"observable record at all, so its discriminator cannot be derived", decision)
+		return ""
 	}
-	return auditProbePayload + "-RESULT"
 }
 
 // boundaryCrossings flattens every channel of the native boundary into strings,
