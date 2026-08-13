@@ -12,7 +12,9 @@
 
 Go SDK for [AI Agent Assembly](https://github.com/ai-agent-assembly) — runtime governance for AI agent tool calls.
 
-The SDK initialises in a few lines, propagates agent identity through `context.Context`, wraps your agent's tool slice with policy enforcement, and forwards every check + result to the AAASM gateway over gRPC or HTTP.
+The SDK initialises in a few lines, propagates agent identity through `context.Context`, wraps your agent's tool slice with policy enforcement, and forwards every policy check to the AAASM gateway over gRPC or HTTP.
+
+> **The result record is a different story.** The wrapper offers the outcome of every governed call — allowed or denied — to the `GovernanceClient`'s `RecordResult`, but the client this SDK ships **drops it**: governed tool calls produce **no audit evidence** from the SDK layer, so nothing on this path can be attributed or reviewed after the fact. Enforcement is unaffected — a policy DENY still blocks the tool. `Init` warns when this is the case and `Assembly.AuditSink()` reports it in code. Pass your own `GovernanceClient` to retain the record ([AAASM-5731](https://lightning-dust-mite.atlassian.net/browse/AAASM-5731)).
 
 ## Project status
 
@@ -120,7 +122,7 @@ if err != nil {
 defer a.Close()
 ```
 
-`WithAgentID` attaches the calling agent's identity to `ctx`; the SDK forwards it (and any `WithTraceID` / `WithRunID` values) to the gateway on every `Check` and `RecordResult`. See [Context Propagation](#context-propagation) below for the full set of context helpers.
+`WithAgentID` attaches the calling agent's identity to `ctx`; the SDK stamps it (and any `WithTraceID` / `WithRunID` values) onto every `Check` and `RecordResult`. It reaches the gateway on the `Check` — the `RecordResult` is dropped by the shipped client (see the note at the top). See [Context Propagation](#context-propagation) below for the full set of context helpers.
 
 Then wrap your agent's tools so every call is governed:
 
@@ -128,7 +130,7 @@ Then wrap your agent's tools so every call is governed:
 governed := assembly.WrapTools(myTools, nil)
 ```
 
-The second argument is the `GovernanceClient` that talks to the gateway. Under the default fail-closed enforce posture, passing `nil` denies every wrapped call (`ErrGovernanceUnavailable`) rather than running it unchecked (AAASM-3109) — wire in a real client when you're ready to enforce. To get a passthrough wrapper instead (tools run, no gateway calls) while you're wiring one up, pass `assembly.WithFailClosed(false)` as an option. Each call against a tool in `governed` is then checked against the gateway policy before it runs and recorded after. Hand `governed` to your agent in place of the originals. See [Quick Start](docs/quick-start.md) for the end-to-end walk-through.
+The second argument is the `GovernanceClient` that talks to the gateway. Under the default fail-closed enforce posture, passing `nil` denies every wrapped call (`ErrGovernanceUnavailable`) rather than running it unchecked (AAASM-3109) — wire in a real client when you're ready to enforce. To get a passthrough wrapper instead (tools run, no gateway calls) while you're wiring one up, pass `assembly.WithFailClosed(false)` as an option. Each call against a tool in `governed` is then checked against the gateway policy before it runs, and its outcome is offered to `RecordResult` after — though the shipped client discards that record rather than retaining it (see the note at the top). Hand `governed` to your agent in place of the originals. See [Quick Start](docs/quick-start.md) for the end-to-end walk-through.
 
 ## Documentation
 

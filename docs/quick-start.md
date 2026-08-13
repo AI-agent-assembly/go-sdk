@@ -88,8 +88,8 @@ import (
 )
 
 func main() {
-    // Stamp this agent's identity onto the context. The SDK forwards it to
-    // the gateway on every check and record.
+    // Stamp this agent's identity onto the context. The SDK stamps it onto
+    // every check and record; the check is what reaches the gateway.
     ctx := assembly.WithAgentID(context.Background(), "my-agent")
 
     a, err := assembly.Init(ctx,
@@ -142,8 +142,11 @@ enforce policy (see
 [Handle allow/deny decisions and errors]({{< relref "/guides/handle-decisions-and-errors" >}})).
 
 Hand `governed` to your agent in place of the originals. From here on, each call
-against a governed tool is checked against the gateway policy before execution
-and recorded after.
+against a governed tool is checked against the gateway policy before execution,
+and its outcome is offered to `RecordResult` after — though the client this SDK
+ships discards that record rather than retaining it, so the SDK layer keeps no
+audit trail of its own (see the warning on the
+[documentation home]({{< relref "/" >}}), AAASM-5731).
 
 ### Govern your first agent
 

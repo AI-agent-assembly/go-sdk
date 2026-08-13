@@ -7,14 +7,27 @@ toc: false
 
 AI agents take real actions — calling APIs, running code, spending money, touching
 data. This SDK lets a team decide, in advance, which of those actions an agent is
-allowed to take, and keeps a record of every one. It is the Go on-ramp to that
-control.
+allowed to take. It is the Go on-ramp to that control.
 
 The **Go SDK for AI Agent Assembly** lets you put a governance checkpoint in
 front of the tools your AI agent calls — without rewriting the agent. You
 initialise the runtime once, wrap your tool slice, and from then on every tool
-call is checked against your gateway's policy *before* it runs and recorded
-*after* it finishes.
+call is checked against your gateway's policy *before* it runs, and its outcome
+is offered to the governance client *after* it finishes.
+
+{{< callout type="warning" >}}
+**The SDK layer keeps no audit trail of its own.** The wrapper offers the outcome
+of every governed call — allowed or denied — to `GovernanceClient.RecordResult`,
+but the client this SDK ships **drops it**. Governed tool calls therefore produce
+**no audit evidence** from the SDK layer, and nothing on this path can be
+attributed or reviewed after the fact.
+
+This does not change the enforcement posture: a policy DENY still blocks the tool,
+and the runtime / proxy / eBPF layers are unaffected. `Init` warns when the
+resolved client discards, and `Assembly.AuditSink()` reports it programmatically.
+Pass your own `GovernanceClient` to retain the record
+([AAASM-5731](https://lightning-dust-mite.atlassian.net/browse/AAASM-5731)).
+{{< /callout >}}
 
 It is written in idiomatic Go: functional options, context-first APIs, typed
 errors, and a pure-Go default that builds with `CGO_ENABLED=0`.
@@ -29,9 +42,10 @@ Concretely, the SDK is two things working together:
   repo) and speaks its wire protocol over gRPC/HTTP — or, in local
   development, auto-discovers and starts a gateway for you.
 - **An in-process interception shim.** `WrapTools` decorates your existing
-  `Tool` values so each `Call` runs a policy `Check` first and a
-  `RecordResult` after. Your agent code keeps calling tools the way it always
-  did; the wrapper does the governance.
+  `Tool` values so each `Call` runs a policy `Check` first and offers the outcome
+  to `RecordResult` after (which the shipped client drops — see above). Your
+  agent code keeps calling tools the way it always did; the wrapper does the
+  governance.
 
 For the platform as a whole — what the gateway is, how policy and budgets are
 authored, and how the three interception layers fit together — see the
@@ -40,9 +54,10 @@ and the shared [docs hub](https://docs.agent-assembly.com/).
 
 ## Who it's for
 
-- **Go developers** building or operating AI agents who need allow/deny, audit,
-  budget, and topology governance over what their agents can do — and want to
-  add it as a library, not a rewrite.
+- **Go developers** building or operating AI agents who need allow/deny, budget,
+  and topology governance over what their agents can do — and want to add it as a
+  library, not a rewrite. Note that audit evidence is **not** part of what this
+  SDK layer delivers by default (see above).
 - **Platform teams** standardising agent governance across services: the same
   gateway and policy back several languages (there are sibling
   [Python](https://docs.agent-assembly.com/python-sdk/) and

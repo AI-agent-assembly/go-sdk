@@ -87,8 +87,9 @@ on the wire:
 ## Per-call identity (context helpers)
 
 Identity that varies per request is carried on `context.Context`, not on
-`Init`. The SDK forwards these to the gateway on every `Check` and
-`RecordResult`:
+`Init`. The SDK stamps these onto every `Check` and `RecordResult`; the `Check`
+is what carries them to the gateway, since the shipped client discards the record
+(AAASM-5731):
 
 | Helper | Reader | Notes |
 | --- | --- | --- |
