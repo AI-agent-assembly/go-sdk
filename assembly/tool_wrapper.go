@@ -100,20 +100,27 @@ func (t *AssemblyTool) Call(ctx context.Context, input string) (string, error) {
 // Previously Call returned at the gate branches before RecordResult was
 // invoked at all, so a deny could not reach an audit sink even in principle.
 //
-// What this does not do is make a deny observable in a released binary. The
-// only production GovernanceClient is ffiGovernanceClient, whose RecordResult
-// discards its argument and returns nil, and the FFI event channel that its
-// comment defers to carries only the boot "register" event — no tool-call
-// event. So on the shipped path a denied call remains Unmeasured in audit
-// evidence (ADR 0033 §6). This method makes the call site correct; supplying a
-// sink that retains the record is a separate capability, not part of this fix.
+// What this does not do is make any governed call observable in a released
+// binary. The only production GovernanceClient is ffiGovernanceClient, whose
+// RecordResult discards its argument and returns nil, and the FFI event channel
+// its comment used to defer to carries only the boot "register" event — no
+// tool-call event, measured at the native boundary (AAASM-5731). This method
+// makes the call site correct; supplying a sink that retains the record is a
+// separate capability.
+//
+// The claim term for that is **Planned** with AAASM-5731 as the reference, not
+// *Unmeasured*: §6 reserves Unmeasured for an action nothing inspected, where
+// nothing is known. Here the record is built, passed, and dropped, and exactly
+// where it stops has been measured — so what is missing is a decided-but-unbuilt
+// sink, which is what Planned names. Either way it is not *Observed*, which
+// needs a durable event attributed to the action.
 //
 // This is only reachable after [AssemblyTool.Call] has established a non-nil
 // client, so it needs no nil guard. The nil-client path does not call
 // RecordResult at all, for a different reason: the client *is* the sink, so
-// when it is absent there is nothing to call. Under the enforce posture that
-// path still denies the call (see shouldDenyOnUnavailable), so that deny is
-// Unmeasured too.
+// when it is absent there is nothing to call — [AuditSinkAbsent] rather than
+// [AuditSinkDiscarded]. Under the enforce posture that path still denies the
+// call (see shouldDenyOnUnavailable), and that deny produces no evidence either.
 func (t *AssemblyTool) recordOutcome(ctx context.Context, result string, callErr error) {
 	recordCtx := context.WithoutCancel(ctx)
 	go func() {

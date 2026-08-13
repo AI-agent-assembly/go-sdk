@@ -24,7 +24,12 @@ type ApprovalRequest struct {
 	RunID string
 }
 
-// RecordRequest reports the outcome of one governed tool call for audit.
+// RecordRequest carries the outcome of one governed tool call to
+// [GovernanceClient.RecordResult].
+//
+// Whether it reaches an audit trail is a property of the client, not of this
+// struct: the client this SDK ships discards it (see [AuditSinkDisposition],
+// AAASM-5731), so on the shipped path nothing built from this type is retained.
 //
 // Since AAASM-5665 the wrapper emits one for a call that was denied before
 // execution as well as one that ran, so the struct no longer implies the tool

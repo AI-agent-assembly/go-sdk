@@ -1,9 +1,17 @@
 // Package assembly provides the Go SDK for Agent Assembly governance.
 //
-// It enables AI agent tool calls to be intercepted, checked against a
-// governance policy gateway, and recorded for audit. The SDK manages
-// sidecar connectivity, context propagation (agent ID, trace ID, run ID),
-// and HTTP/gRPC middleware for outbound interception.
+// It enables AI agent tool calls to be intercepted and checked against a
+// governance policy gateway before they run. The SDK manages sidecar
+// connectivity, context propagation (agent ID, trace ID, run ID), and HTTP/gRPC
+// middleware for outbound interception.
+//
+// It does NOT keep an audit trail of its own. The outcome of every governed
+// call is offered to [GovernanceClient.RecordResult], but the client this SDK
+// ships drops it, so governed tool calls produce no audit evidence from the SDK
+// layer and nothing on this path can be attributed or reviewed after the fact.
+// Enforcement is unaffected. [Init] warns when that is the case and
+// [Assembly.AuditSink] reports it programmatically — see
+// [AuditSinkDisposition] (AAASM-5731).
 //
 // # Quick Start
 //
@@ -35,7 +43,15 @@
 //	)
 //
 // Each wrapped tool calls [GovernanceClient.Check] before execution and
-// [GovernanceClient.RecordResult] after execution.
+// [GovernanceClient.RecordResult] after execution, on the denied path as well as
+// the executed one.
+//
+// Whether that record is *retained* is a property of the client, not of the
+// wrapper, and the client this SDK ships drops it: governed tool calls produce
+// no audit evidence from the SDK layer unless you pass your own
+// GovernanceClient. Init warns when that is the case and
+// [Assembly.AuditSink] reports it programmatically — see
+// [AuditSinkDisposition] (AAASM-5731).
 //
 // # Context Propagation
 //
