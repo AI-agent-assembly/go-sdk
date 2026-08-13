@@ -94,8 +94,15 @@ func (c *forwardingGovernanceClient) Close() error { return nil }
 // its method set — and the AST version of this gate passed it. types.Implements
 // resolves the full method set, promotion included.
 //
-// It also loads ./... rather than the working directory, so an implementation
-// that lands in any package of this module is covered, not only assembly's.
+// The load pattern is the MODULE path, not "./...". go test sets the working
+// directory to the package under test, so "./..." expanded from assembly/ and
+// loaded 1 of this module's 6 packages — review of #198 measured a full
+// GovernanceClient in examples/minimal passing uncaught. The comment that used
+// to sit here claimed module-wide coverage the pattern did not deliver: the
+// rewrite changed the mechanism and left the scope. Naming it because it is a
+// fourth instance of the pattern this PR names three times — a comment
+// describing a mechanism that does not carry what it claims — and this one
+// appeared inside the fix for the first three.
 func TestEveryShippedGovernanceClientDeclaresItsAuditSink(t *testing.T) {
 	loaded, err := packages.Load(&packages.Config{
 		Mode: packages.NeedName | packages.NeedTypes | packages.NeedDeps | packages.NeedImports,
@@ -103,7 +110,7 @@ func TestEveryShippedGovernanceClientDeclaresItsAuditSink(t *testing.T) {
 		// probe client living in a _test.go file is not shipped, and including
 		// test binaries would make the gate fail on its own fixtures.
 		Tests: false,
-	}, "./...")
+	}, "github.com/ai-agent-assembly/go-sdk/...")
 	if err != nil {
 		t.Fatalf("load module packages: %v", err)
 	}
