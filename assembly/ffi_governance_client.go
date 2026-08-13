@@ -150,10 +150,32 @@ func (c *ffiGovernanceClient) WaitForApproval(ctx context.Context, _ ApprovalReq
 	}, nil
 }
 
-// RecordResult is a no-op: tool results are reported to the runtime through the
-// FFI event channel by the Assembly runtime, not through this client.
+// RecordResult discards the record and reports success (AAASM-5731).
+//
+// The previous comment here said tool results are "reported to the runtime
+// through the FFI event channel by the Assembly runtime, not through this
+// client". Measured against the native boundary, that is not what happens for a
+// tool call: ffi.Client.SendEvent — the SDK's only outbound event channel, see
+// the binding interface in internal/ffi/client.go — has exactly one non-test
+// call site, runtime.go's boot "register" event. No tool-call result crosses it,
+// on the allowed path or the denied one. Both parameters are dropped and the nil
+// return is indistinguishable from a retained record.
+//
+// This is not an enforcement gap: [AssemblyTool.Call] still denies on a runtime
+// DENY, and the runtime / proxy / eBPF layers remain authoritative. It is an
+// evidence gap, and it is declared rather than left implicit — see AuditSink
+// below. Giving this client a sink that retains the record is a new capability
+// (an FFI record path), not a fix to apply here; under ADR 0033 §6 that is
+// **Planned** (AAASM-5731), not *Observed*.
 func (c *ffiGovernanceClient) RecordResult(_ context.Context, _ RecordRequest) error {
 	return nil
+}
+
+// AuditSink declares that this client drops the hook-layer audit record it is
+// given, so [ResolveAuditSink] can surface the gap to the caller and a test can
+// catch a shipped client that discards without saying so (AAASM-5731).
+func (c *ffiGovernanceClient) AuditSink() AuditSinkDisposition {
+	return AuditSinkDiscarded
 }
 
 // Close releases no resources; the underlying FFI client lifecycle is owned by
@@ -162,4 +184,7 @@ func (c *ffiGovernanceClient) Close() error {
 	return nil
 }
 
-var _ GovernanceClient = (*ffiGovernanceClient)(nil)
+var (
+	_ GovernanceClient  = (*ffiGovernanceClient)(nil)
+	_ AuditSinkDeclarer = (*ffiGovernanceClient)(nil)
+)
