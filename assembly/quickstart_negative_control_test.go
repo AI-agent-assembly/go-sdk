@@ -202,7 +202,7 @@ func TestQuickStartDenyIsAttributable(t *testing.T) {
 		// Scope of the evidence: this is a test double's in-process slice, not
 		// a persisted artifact. The only production client discards the record
 		// (ffiGovernanceClient.RecordResult), so a deny produces no audit
-		// evidence on the shipped path — Planned under ADR 0033 §6 (AAASM-5731),
+		// evidence on the shipped path — Planned under ADR 0033 §6 (AAASM-5750),
 		// not Unmeasured, since where the record stops has been measured. What
 		// this control pins is the wrapper's call — the part fixable without a
 		// new FFI capability.

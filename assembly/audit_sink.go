@@ -19,7 +19,7 @@ package assembly
 // anything else is the absence of a claim, not an assurance.
 //
 // Under ADR 0033 §6, a client declaring anything other than
-// [AuditSinkCallerSupplied] makes SDK-side recording **Planned** (AAASM-5731),
+// [AuditSinkCallerSupplied] makes SDK-side recording **Planned** (AAASM-5750),
 // never *Observed* — *Observed* requires a durable event attributed to the
 // action, and there is none.
 type AuditSinkDisposition string
