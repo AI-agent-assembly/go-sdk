@@ -166,7 +166,7 @@ func (c *ffiGovernanceClient) WaitForApproval(ctx context.Context, _ ApprovalReq
 // evidence gap, and it is declared rather than left implicit — see AuditSink
 // below. Giving this client a sink that retains the record is a new capability
 // (an FFI record path), not a fix to apply here; under ADR 0033 §6 that is
-// **Planned** (AAASM-5731), not *Observed*.
+// **Planned** (AAASM-5750), not *Observed*.
 func (c *ffiGovernanceClient) RecordResult(_ context.Context, _ RecordRequest) error {
 	return nil
 }

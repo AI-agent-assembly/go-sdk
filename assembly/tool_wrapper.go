@@ -108,7 +108,7 @@ func (t *AssemblyTool) Call(ctx context.Context, input string) (string, error) {
 // makes the call site correct; supplying a sink that retains the record is a
 // separate capability.
 //
-// The claim term for that is **Planned** with AAASM-5731 as the reference, not
+// The claim term for that is **Planned** with AAASM-5750 as the reference, not
 // *Unmeasured*: §6 reserves Unmeasured for an action nothing inspected, where
 // nothing is known. Here the record is built, passed, and dropped, and exactly
 // where it stops has been measured — so what is missing is a decided-but-unbuilt
