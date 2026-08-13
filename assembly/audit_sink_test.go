@@ -205,9 +205,17 @@ func TestShippedClientDeclaringNoRetentionReachesNothing(t *testing.T) {
 		name     string
 		decision int32
 		reason   string
+		// discriminator is the substring only the RECORD path can carry on this
+		// branch. It MUST differ per branch: on the denied path recordOutcome is
+		// handed result="" and the short-circuit error, so asserting on the tool
+		// RESULT there is an assertion that cannot fail — review of #198 measured
+		// the leaking mutation turning "allowed" red while "denied" stayed green.
+		// The deny reason travels in RecordRequest.Error, so that is the
+		// discriminator with real falsifying power on this branch.
+		discriminator string
 	}{
-		{"allowed", ffi.DecisionAllow, ""},
-		{"denied", ffi.DecisionDeny, "blocked by policy"},
+		{"allowed", ffi.DecisionAllow, "", auditProbePayload + "-RESULT"},
+		{"denied", ffi.DecisionDeny, auditProbePayload + "-DENY-REASON", auditProbePayload + "-DENY-REASON"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			capClient, crossings := ffi.NewRecordingClient(tc.decision, tc.reason)
@@ -244,13 +252,22 @@ func TestShippedClientDeclaringNoRetentionReachesNothing(t *testing.T) {
 					(*crossings.Queries)[0].ArgsJSON)
 			}
 
-			// The tool RESULT is the discriminator: only the record path knows
-			// it. The check above carries the ARGS, so asserting on the args
-			// would collide with the positive control and be unfalsifiable.
-			// Both boundary channels are swept, not just the event one — a leak
-			// that took the query channel would otherwise go unseen.
+			// Assert on tc.discriminator, never on the ARGS: the check above
+			// carries the args, so an args assertion would collide with the
+			// positive control and be unfalsifiable. Both boundary channels are
+			// swept, not just the event one — a leak that took the query channel
+			// would otherwise go unseen.
+			//
+			// The discriminator must be reachable on this branch. Guard it: if
+			// the deny reason ever stops reaching RecordRequest.Error, this
+			// assertion silently becomes vacuous again, which is precisely the
+			// defect being fixed here.
+			if !strings.Contains(recordedDiscriminatorSource(tc.name, tc.reason), auditProbePayload) {
+				t.Fatalf("the %s branch has no discriminator the record path could carry; "+
+					"its leak assertion below cannot fail", tc.name)
+			}
 			for _, crossing := range boundaryCrossings(crossings) {
-				if strings.Contains(crossing, auditProbePayload+"-RESULT") {
+				if strings.Contains(crossing, tc.discriminator) {
 					t.Errorf("a client declaring %q leaked the audit record across the native "+
 						"boundary: %q — the declaration and the behaviour disagree",
 						AuditSinkDiscarded, crossing)
@@ -294,6 +311,18 @@ func TestForwardingClientDoesReachTheBoundary(t *testing.T) {
 			"nothing' assertion elsewhere in this file is unfalsifiable",
 			boundaryCrossings(crossings))
 	}
+}
+
+// recordedDiscriminatorSource returns the field of RecordRequest that carries
+// this branch's discriminator, so the test can prove the discriminator is
+// reachable rather than assume it. On the allowed path that is the tool result;
+// on the denied path the tool never runs and the result is empty, so it is the
+// short-circuit error text (AAASM-5731).
+func recordedDiscriminatorSource(branch, reason string) string {
+	if branch == "denied" {
+		return (&PolicyViolationError{ToolName: "web_search", Reason: reason}).Error()
+	}
+	return auditProbePayload + "-RESULT"
 }
 
 // boundaryCrossings flattens every channel of the native boundary into strings,
