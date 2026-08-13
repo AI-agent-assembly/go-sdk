@@ -52,7 +52,9 @@ defer a.Close()
 ```
 
 `WithAgentID` stamps this agent's identity onto the context so the gateway can
-attribute every check and record to `research-agent`.
+attribute every check to `research-agent`. The same identity is stamped onto the
+record, but the client this SDK ships drops the record, so there is nothing to
+attribute on that side (AAASM-5731).
 
 ## 3. Wrap the tools
 
@@ -63,7 +65,8 @@ governed := assembly.WrapTools(tools, client)
 
 `WrapTools` returns a *new* slice the same length as the input, where each tool
 is an `*AssemblyTool` that runs a policy `Check` before `Call` and a
-`RecordResult` after.
+`RecordResult` after. The `RecordResult` reaches an audit trail only if `client`
+retains it; the one this SDK ships does not (AAASM-5731).
 
 - The second argument is your `GovernanceClient` (the thing that talks to the
   gateway). Under the default fail-closed enforce posture, passing `nil` denies

@@ -25,7 +25,9 @@ type Decision struct {
 You normally don't inspect this yourself — the wrapper acts on it for you:
 
 - **Allowed** (`Denied == false`, `Pending == false`) — the inner tool runs, its
-  result is returned, and a `RecordResult` is sent afterward.
+  result is returned, and a `RecordResult` is offered to the governance client
+  afterward — retained only if that client keeps it, which the shipped one does
+  not (AAASM-5731).
 - **Denied** (`Denied == true`) — the inner tool does **not** run; `Call` returns
   a `*PolicyViolationError`.
 - **Pending** (`Pending == true`) — the wrapper calls `WaitForApproval` and

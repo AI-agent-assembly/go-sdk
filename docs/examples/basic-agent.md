@@ -73,7 +73,7 @@ tool, then calls it:
 
 ```go
 func main() {
-	// Tag the context so governance records include this agent's ID.
+	// Tag the context so governance checks carry this agent's ID.
 	ctx := assembly.WithAgentID(context.Background(), "basic-agent-demo")
 
 	// Use the offline mock governance client.

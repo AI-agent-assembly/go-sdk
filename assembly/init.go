@@ -90,5 +90,12 @@ func Init(ctx context.Context, options ...Option) (*Assembly, error) {
 	if err := a.boot(ctx); err != nil {
 		return nil, err
 	}
+	// AAASM-5731 — surface an audit sink that retains nothing on the default
+	// path. Emitted here rather than inside boot because boot has two success
+	// returns (the native FFI path and the sidecar fallback) and the warning must
+	// fire on exactly one of them per Init, whichever was taken.
+	if disposition := a.AuditSink(); disposition != AuditSinkCallerSupplied {
+		warnAuditNotRecorded(disposition)
+	}
 	return a, nil
 }

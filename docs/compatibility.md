@@ -36,9 +36,10 @@ change ships.
 - **Enforcement modes** — `EnforcementMode` mirrors `aa_core::EnforcementMode`;
   the `enforce` / `observe` / `disabled` tokens are sent verbatim on the wire.
   See [Configuration]({{< relref "/configuration" >}}) for the per-agent posture.
-- **Identity propagation** — agent / trace / run IDs flow to the gateway on
-  every `Check` and `RecordResult`; the trace ID falls back to the active
-  OpenTelemetry span context when not set explicitly.
+- **Identity propagation** — agent / trace / run IDs are stamped onto every
+  `Check` and `RecordResult`, and reach the gateway on the `Check` (the shipped
+  governance client discards the record, AAASM-5731); the trace ID falls back to
+  the active OpenTelemetry span context when not set explicitly.
 
 ## Framework compatibility
 

@@ -201,3 +201,54 @@ func NewCapturingClientAllowing() (*Client, *[]Registration) {
 	b := &denyingRegisteringBinding{queryDecision: DecisionAllow}
 	return NewClient(b), &b.Registrations
 }
+
+// PolicyQuery records one queryPolicy crossing of the native boundary.
+type PolicyQuery struct {
+	AgentID    string
+	ActionType string
+	ToolName   string
+	ArgsJSON   string
+}
+
+// recordingBinding captures every crossing of the native boundary in one place:
+// the policy queries AND the events. capturingBinding already records events but
+// discards the queryPolicy arguments, so a test can see that a check crossed but
+// not what it carried — which is exactly what an audit measurement needs on both
+// sides (AAASM-5731).
+type recordingBinding struct {
+	capturingBinding
+	Queries       []PolicyQuery
+	queryDecision int32
+	queryReason   string
+}
+
+func (b *recordingBinding) queryPolicy(_ unsafe.Pointer, agentID, actionType, toolName, argsJSON string) (int32, string, int32) {
+	b.Queries = append(b.Queries, PolicyQuery{
+		AgentID:    agentID,
+		ActionType: actionType,
+		ToolName:   toolName,
+		ArgsJSON:   argsJSON,
+	})
+	return b.queryDecision, b.queryReason, statusOK
+}
+
+// NativeCrossings exposes everything that crossed the native FFI boundary during
+// a run: the policy queries and the event payloads.
+//
+// binding.sendEvent is the SDK's ONLY outbound event channel (see the binding
+// interface in client.go), so "nothing was recorded" is decidable here and
+// nowhere else. The Queries side is the positive control that makes an empty
+// Events slice admissible: without it, zero events is indistinguishable from a
+// probe that never ran (AAASM-5731).
+type NativeCrossings struct {
+	Queries *[]PolicyQuery
+	Events  *[]string
+}
+
+// NewRecordingClient returns a capturing client whose register succeeds, whose
+// policy queries return the supplied decision, and which exposes every crossing
+// of the native boundary — queries and events alike.
+func NewRecordingClient(decision int32, reason string) (*Client, NativeCrossings) {
+	b := &recordingBinding{queryDecision: decision, queryReason: reason}
+	return NewClient(b), NativeCrossings{Queries: &b.Queries, Events: &b.Events}
+}

@@ -169,6 +169,56 @@ func (a *Assembly) registerAgent() {
 	}
 }
 
+// AuditSink reports what the governance client resolved at Init does with the
+// hook-layer audit record for a governed tool call (AAASM-5731).
+//
+// It is the programmatic counterpart of the warning warnAuditNotRecorded emits,
+// so a caller wiring up governance can detect in code — not only by reading a
+// log line — that governed actions produce no audit evidence. Anything other
+// than [AuditSinkCallerSupplied] means no claim of attributability or
+// after-the-fact review holds on the SDK path.
+func (a *Assembly) AuditSink() AuditSinkDisposition {
+	return ResolveAuditSink(a.governance)
+}
+
+// warnAuditNotRecorded tells the caller, once per Init, that governed tool calls
+// will produce no audit evidence from this SDK (AAASM-5731).
+//
+// Before this there was no signal at all: RecordResult returns nil whether or
+// not it kept anything, so a caller had to read ffiGovernanceClient to find out.
+// Enforcement is genuinely unaffected — a runtime DENY still blocks the tool —
+// which is exactly why the gap is easy to miss.
+//
+// It does not fail Init. A caller may not need SDK-side audit, and the runtime /
+// proxy / eBPF layers are unaffected; refusing to start over an evidence gap
+// would trade a truthfulness fix for an availability regression. It is emitted
+// through log.Printf rather than a bespoke stderr write because that is this
+// package's one warning channel (registerAgent, the fail-closed branches in
+// tool_wrapper.go); introducing a second one for this message would make the
+// SDK's diagnostics harder to capture, not easier to notice.
+func warnAuditNotRecorded(disposition AuditSinkDisposition) {
+	// The clause MUST branch on the disposition. "discarded" and "absent" fail
+	// in different ways and the remedy differs: a discarding sink has a correct
+	// call site and needs a retaining client, whereas an absent one never
+	// attempts the record at all. Collapsing them into one sentence would be
+	// wrong in one direction or the other.
+	var mechanism string
+	if disposition == AuditSinkAbsent {
+		mechanism = "no governance client was resolved at Init, so no audit record is even attempted"
+	} else {
+		mechanism = "the governance client this SDK ships drops the record it is handed"
+	}
+	log.Printf(
+		"assembly: WARNING: hook-layer audit records are NOT retained (audit sink %q): %s, "+
+			"so governed tool calls produce NO audit evidence from this SDK and nothing on this "+
+			"path can be attributed or reviewed after the fact. Enforcement is unaffected: a "+
+			"runtime DENY still blocks a tool call, and the runtime / proxy / eBPF layers remain "+
+			"authoritative. Pass your own GovernanceClient to WrapTools to retain the record, and "+
+			"inspect Assembly.AuditSink() to detect this programmatically (AAASM-5731).",
+		disposition, mechanism,
+	)
+}
+
 // Close shuts down runtime resources: it tears down the native FFI session (when
 // boot opened one) and stops the managed sidecar subprocess (when one was
 // launched). Both teardowns run even if the first errors; the combined error is

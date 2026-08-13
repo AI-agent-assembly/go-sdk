@@ -21,7 +21,9 @@ what you're building.
 Every example follows the same shape as the [Quick Start]({{< relref "/quick-start" >}}):
 tag the context with an agent ID, then wrap your tools with a
 `GovernanceClient` so each call is checked against a policy *before* it runs and
-recorded *after* it finishes.
+its outcome offered to `RecordResult` *after* it finishes. The client this SDK
+ships discards that record — see the warning on the
+[documentation home]({{< relref "/" >}}) (AAASM-5731).
 
 ```go
 import (
