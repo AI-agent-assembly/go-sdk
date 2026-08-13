@@ -86,12 +86,36 @@ var enforcementVocabulary = regexp.MustCompile(
 		`|\bverified\b|\bprotection\b|\bunprotected\b|\bbypass(ed|es)?\b`,
 )
 
-// Allow-list categories. Permitted only for a sentence that does NOT match the
-// vocabulary; anything that does needs a written reason.
-const (
-	notAClaim  = "Descriptive or instructional prose. Says nothing about what governance does to a tool call."
-	navigation = "A cross-reference. The claim, if any, lives on the page linked to and is gated there."
-)
+// structural is the ONLY bare constant. It is permitted solely for lines that
+// are not prose — a bare Hugo shortcode, a tab caption, a table row, a bare
+// link-list item — matched by structuralLine below. Every other entry carries a
+// written justification unique to that sentence.
+//
+// The previous rule required a justification only when the sentence matched the
+// enforcement vocabulary, which is backwards: the sentences that most need
+// explaining are the ones that EVADE the vocabulary, since evading it is the
+// whole reason the scan was inverted.
+const structural = "Structurally non-prose: a bare shortcode, tab caption, table row, or link-list item."
+
+// structuralLine matches the lines that may use the bare constant. A callout
+// whose shortcode is followed by prose is NOT structural.
+var structuralLine = regexp.MustCompile(`^\{\{<[^>]*>\}\}(\s*\{\{<[^>]*>\}\})*$|^\||^_Governance slice|^\*\*\[|^\[`)
+
+// minJustification is a floor, not a real check: no gate can tell a
+// justification from noise. It only makes reason="x" visible.
+const minJustification = 40
+
+// contrastiveConjunction marks a sentence that turns mid-way. A justification
+// arguing "this only says what the product does NOT do" cannot be trusted for
+// such a sentence, because the clause after the turn may be an affirmative
+// capability claim riding along under the disclaimer. Review found exactly that
+// shape shipped here: "The steps below wrap and govern tool calls, but the
+// register handshake runs only under..." was waved through as a disclaimer.
+var contrastiveConjunction = regexp.MustCompile(`(?i)\s(?:but|because|so|while|though|although|however)\s`)
+
+// disclaimerMarker identifies a justification that rests on the sentence being
+// a limitation. Those are the entries the rule above polices.
+const disclaimerMarker = "limitation disclaimer"
 
 // claimBinding is one documented claim and the controls that stand behind it.
 type claimBinding struct {
@@ -176,6 +200,24 @@ var quickStartClaimBindings = []claimBinding{
 			"the WrapTools controls here would misrepresent what was measured.",
 	},
 	{
+		id: "steps-below-wrap-and-govern-tool-calls",
+		// Review found this shipped as a DISCLAIMER-justified allow-list entry.
+		// It is not a disclaimer: the clause before the turn — "The steps below
+		// wrap and govern tool calls" — is an affirmative capability claim, and
+		// it rode along under a justification reading "it says what the product
+		// does NOT do". True today and provable, which is exactly why the
+		// precedent was the danger rather than the sentence.
+		quote: "The steps below wrap and govern tool calls, but the register handshake runs *only* under " +
+			"the opt-in native cgo binding (`-tags aa_ffi_go`, `CGO_ENABLED=1`), and that native library " +
+			"(`libaa_ffi_go`) is **not published anywhere** yet: building with `-tags aa_ffi_go` fails " +
+			"with `ld: library 'aa_ffi_go' not found` outside a full monorepo checkout.",
+		controls: []string{
+			negControl + "TestQuickStartFilesystemNegativeControl/NegativeControl_DeniedWriteLeavesNoFile",
+			negControl + "TestQuickStartNetworkNegativeControl/NegativeControl_DeniedEgressNeverReachesTheListener",
+			negControl + "TestQuickStartWrappingDoesNotDisarmTheOriginalTool",
+		},
+	},
+	{
 		id: "deny-surfaces-as-policy-violation-and-tool-never-runs",
 		quote: "With a real governance client wired in, a `deny` decision surfaces as a " +
 			"`*assembly.PolicyViolationError` and the inner tool never runs.",
@@ -191,72 +233,47 @@ var quickStartClaimBindings = []claimBinding{
 // exactly. A category is permitted only where the sentence does not match
 // enforcementVocabulary; anything that does carries a written justification.
 var allowedSentences = map[string]string{
-	"The whole thing is a single `main` you can copy, paste, and run.": notAClaim,
-	"The default pure-Go build has no native transport, so it does not register even when [`WithSidecarAddress`](https://pkg.go.dev/github.com/ai-agent-assembly/go-sdk/assembly#WithSidecarAddress) is set (see that option's godoc).":                                          notAClaim,
-	"Publishing the native library — or dropping the cgo requirement — is a separate product decision; track status in [AAASM-4547](https://lightning-dust-mite.atlassian.net/browse/AAASM-4547) and [AAASM-4469](https://lightning-dust-mite.atlassian.net/browse/AAASM-4469).": notAClaim,
-	"{{< /callout >}}": notAClaim,
-	"**Go** ≥ 1.26 (the floor declared in `go.mod`).": notAClaim,
-	"For **local development**: nothing else — `Init` auto-discovers a gateway on `http://localhost:7391`, and starts one for you if none is running (the [`aasm` CLI](https://github.com/ai-agent-assembly/agent-assembly) must be on your `PATH`).": notAClaim,
-	"{{< callout type=\"note\" >}} **Local-mode transports — `:7391` REST + `:50051` gRPC.** `Init` shells out to the following command to auto-start the gateway:":                                                                                   notAClaim,
-	"The `:7391` auto-discovery above only resolves the REST gateway URL.": notAClaim,
-	"Agent **registration** is a separate concern that talks to the gateway's gRPC endpoint (default `127.0.0.1:50051`) — `Init` does **not** auto-derive this address the way the Python and Node SDKs do.":                            notAClaim,
-	"Reaching it requires an explicit [`WithSidecarAddress`](https://pkg.go.dev/github.com/ai-agent-assembly/go-sdk/assembly#WithSidecarAddress) (or `WithSidecarBinary`) option; without one, `Init` returns `ErrSidecarUnavailable`.": notAClaim,
-	"And per the warning at the top of this page, the registration handshake itself only runs under the opt-in native cgo binding today.":                                                                                               notAClaim,
-	"To confirm both surfaces are actually up rather than guessing from `Init`'s behavior, check them directly:":                                                                                                                        notAClaim,
-	"For **production**: a gateway URL and, if your gateway requires auth, an API key.":                                                                                                                                                 notAClaim,
-	"Both can come from options, environment variables, or a config file — see [Configuration]({{< relref \"/configuration\" >}}).":                                                                                                     notAClaim,
-	"*(Optional)* a C compiler, only if you opt into the native FFI transport with `-tags aa_ffi_go`.":                                                                                                                                  notAClaim,
-	"The default transport is pure-Go and needs none.":                                            notAClaim,
-	"`Init` returns an `*assembly.Assembly` — your runtime handle.":                               notAClaim,
-	"Always `Close` it when you're done so the connection (and any managed sidecar) is released.": notAClaim,
-	"For **local development** you can drop both options entirely — `assembly.Init(ctx)` resolves the gateway from the environment, then `~/.aasm/config.yaml`, then the local default.": notAClaim,
-	"See [Configuration]({{< relref \"/configuration#gateway-and-credential-resolution\" >}}) for the full resolution order.":                                                            navigation,
-	"Your tools just need to satisfy the SDK's small `Tool` interface:":                                                                                                                  notAClaim,
-	"The second argument is the `GovernanceClient` that talks to the gateway.":                                                                                                           notAClaim,
-	"Go's per-framework surface is thin today, so the tabs are **LangChainGo** (the framework path) and **Plain** (the framework-agnostic path).":                                        notAClaim,
-	"A new tab appears automatically once a new Go **framework** example lands.":                                                                                                         notAClaim,
-	"{{< tabs >}} {{< tab name=\"LangChainGo\" >}}":                                                                                                                                      notAClaim,
-	"_Governance slice from the runnable `go/langchaingo/main.go` example._":                                                                                                             notAClaim,
-	"{{< /tab >}} {{< tab name=\"Plain\" >}}":                                                                                                                                            notAClaim,
-	"_Governance slice from the runnable `go/basic-agent/main.go` example._":                                                                                                             notAClaim,
-	"{{< /tab >}} {{< /tabs >}}": notAClaim,
-	"If no gateway can be found and no `aasm` binary is on `PATH`, you'll get a typed `*assembly.ConfigurationError` — see [Troubleshooting]({{< relref \"/troubleshooting\" >}}).": notAClaim,
-	"**Tool calls run** and return the inner tool's result.":                                                     notAClaim,
-	"[Core Concepts]({{< relref \"/core-concepts\" >}}) — what's actually happening inside the SDK.":             navigation,
-	"**[Examples]({{< relref \"/examples\" >}})** — wire the SDK into the framework you actually use.":           navigation,
-	"[Guides]({{< relref \"/guides\" >}}) — wrap a real agent, integrate a framework, handle decisions.":         navigation,
-	"[Configuration]({{< relref \"/configuration\" >}}) — every `Init` option, defaults, and enforcement modes.": navigation,
-	"[Troubleshooting]({{< relref \"/troubleshooting\" >}}) — what to do when `Init` or a check fails.":          navigation,
-
-	// --- sentences matching the vocabulary: written justification required ---
-
-	"{{< callout type=\"warning\" >}} **Agent registration is not reachable from a plain `go get` " +
-		"today — following this quick-start will not make your agent appear in the dashboard.** The " +
-		"steps below wrap and govern tool calls, but the register handshake runs *only* under the " +
-		"opt-in native cgo binding (`-tags aa_ffi_go`, `CGO_ENABLED=1`), and that native library " +
-		"(`libaa_ffi_go`) is **not published anywhere** yet: building with `-tags aa_ffi_go` fails " +
-		"with `ld: library 'aa_ffi_go' not found` outside a full monorepo checkout.": "A LIMITATION " +
-		"disclaimer, not a capability claim — it says what the product does NOT do, which is the " +
-		"opposite of the over-claiming this gate exists to catch. Independently corroborated while " +
-		"scoping AAASM-5529: native/aa-ffi-go/Cargo.toml sets publish = false and no release " +
-		"workflow ships the library. Kept as an exact sentence so that if it ever becomes false, " +
-		"editing it forces a revisit here. NOTE: no Jira ticket currently owns closing this gap.",
-
-	"Hand `governed` to your agent in place of the originals.": "Names the sample's variable. It " +
-		"matches the vocabulary only because the variable is called `governed`; it asserts nothing " +
-		"about what happens to a call made through it.",
-
-	"Pick your framework — each tab shows the governance slice copied verbatim from a runnable " +
-		"example in the [examples repo](https://github.com/ai-agent-assembly/examples/tree/HEAD/go) " +
-		"(a CI drift check keeps them in lockstep).": "Describes where the tab content comes from. " +
-		"'governance slice' names the excerpt's provenance, not an enforcement outcome.",
-
-	"Two more validated Go examples already exist — **Tool Policy** and **CLI Runtime (sidecar)** " +
-		"— but those are patterns (an allow/deny policy demo and sidecar wiring), not \"first agent\" " +
-		"frameworks, so they're intentionally left out of this quick-start; see " +
-		"`metadata/quickstart/README.md` for the tab-selection rationale.": "An editorial note about " +
-		"which example tabs the page shows. It matches the vocabulary through the phrase " +
-		"'allow/deny policy demo', which names an example, not a guarantee.",
+	"*(Optional)* a C compiler, only if you opt into the native FFI transport with `-tags aa_ffi_go`.": "A prerequisites bullet naming a build dependency and when it is needed.",
+	"**Go** ≥ 1.26 (the floor declared in `go.mod`).":                                                  "A prerequisites bullet naming the language version floor.",
+	"**Tool calls run** and return the inner tool's result.":                                           "The allowed-path half of the What-to-expect bullet, stating only that a permitted call returns normally; the deny half is the next sentence, which is bound.",
+	"**[Examples]({{< relref \"/examples\" >}})** — wire the SDK into the framework you actually use.": structural,
+	"A new tab appears automatically once a new Go **framework** example lands.":                       "Describes how the tab list is generated. Documentation mechanics.",
+	"Agent **registration** is a separate concern that talks to the gateway's gRPC endpoint (default `127.0.0.1:50051`) — `Init` does **not** auto-derive this address the way the Python and Node SDKs do.":                                                                     "Distinguishes registration from gateway resolution and states that Go does less here than the other SDKs. A narrowing statement.",
+	"Always `Close` it when you're done so the connection (and any managed sidecar) is released.":                                                                                                                                                                                "Lifecycle instruction for the handle returned by Init.",
+	"And per the warning at the top of this page, the registration handshake itself only runs under the opt-in native cgo binding today.":                                                                                                                                        "Repeats the registration limitation from the page's warning callout. A restriction, and it names no capability the SDK is claimed to have.",
+	"Both can come from options, environment variables, or a config file — see [Configuration]({{< relref \"/configuration\" >}}).":                                                                                                                                              "Lists where the gateway URL and API key may be configured from.",
+	"For **local development** you can drop both options entirely — `assembly.Init(ctx)` resolves the gateway from the environment, then `~/.aasm/config.yaml`, then the local default.":                                                                                         "Lists the gateway resolution order for local development.",
+	"For **local development**: nothing else — `Init` auto-discovers a gateway on `http://localhost:7391`, and starts one for you if none is running (the [`aasm` CLI](https://github.com/ai-agent-assembly/agent-assembly) must be on your `PATH`).":                            "A prerequisites bullet describing auto-discovery and its PATH precondition.",
+	"For **production**: a gateway URL and, if your gateway requires auth, an API key.":                                                                                                                                                                                          "Names what a production deployment must supply.",
+	"Go's per-framework surface is thin today, so the tabs are **LangChainGo** (the framework path) and **Plain** (the framework-agnostic path).":                                                                                                                                "Explains why only two tabs exist. Editorial, about the page rather than the product.",
+	"Hand `governed` to your agent in place of the originals.":                                                                                                                                                                                                                   "Names the sample's variable. It reads like a claim only because that variable is called `governed`.",
+	"If no gateway can be found and no `aasm` binary is on `PATH`, you'll get a typed `*assembly.ConfigurationError` — see [Troubleshooting]({{< relref \"/troubleshooting\" >}}).":                                                                                              "Names the error returned when no gateway is reachable. A failure-mode description, not an enforcement guarantee.",
+	"Pick your framework — each tab shows the governance slice copied verbatim from a runnable example in the [examples repo](https://github.com/ai-agent-assembly/examples/tree/HEAD/go) (a CI drift check keeps them in lockstep).":                                            "Describes where the tab content comes from. 'governance slice' names the excerpt's provenance, not an outcome.",
+	"Publishing the native library — or dropping the cgo requirement — is a separate product decision; track status in [AAASM-4547](https://lightning-dust-mite.atlassian.net/browse/AAASM-4547) and [AAASM-4469](https://lightning-dust-mite.atlassian.net/browse/AAASM-4469).": "Points at the tickets tracking the native-library decision. Roadmap pointer, claiming nothing about today.",
+	"Reaching it requires an explicit [`WithSidecarAddress`](https://pkg.go.dev/github.com/ai-agent-assembly/go-sdk/assembly#WithSidecarAddress) (or `WithSidecarBinary`) option; without one, `Init` returns `ErrSidecarUnavailable`.":                                          "States what the registration endpoint requires and which error is returned without it. A precondition plus a failure mode.",
+	"See [Configuration]({{< relref \"/configuration#gateway-and-credential-resolution\" >}}) for the full resolution order.":                                                                                                                                                    "A cross-reference to the credential-resolution documentation.",
+	"The `:7391` auto-discovery above only resolves the REST gateway URL.":                                                                                                                                                                                                       "Scopes what auto-discovery covers, narrowing rather than widening the claim above it.",
+	"The default pure-Go build has no native transport, so it does not register even when [`WithSidecarAddress`](https://pkg.go.dev/github.com/ai-agent-assembly/go-sdk/assembly#WithSidecarAddress) is set (see that option's godoc).":                                          "States that the default build cannot register at all. Purely a limitation, and it contains no affirmative capability clause.",
+	"The default transport is pure-Go and needs none.":                                                           "States that the default build needs no C compiler, continuing the prerequisites bullet.",
+	"The second argument is the `GovernanceClient` that talks to the gateway.":                                   "Names what the second WrapTools parameter is. A signature description.",
+	"The whole thing is a single `main` you can copy, paste, and run.":                                           "Describes the shape of the example below it.",
+	"To confirm both surfaces are actually up rather than guessing from `Init`'s behavior, check them directly:": "Tells the reader to verify the ports themselves; the commands follow in a fenced block.",
+	"Two more validated Go examples already exist — **Tool Policy** and **CLI Runtime (sidecar)** — but those are patterns (an allow/deny policy demo and sidecar wiring), not \"first agent\" frameworks, so they're intentionally left out of this quick-start; see `metadata/quickstart/README.md` for the tab-selection rationale.": "An editorial note about which example tabs the page shows. 'allow/deny policy demo' names an example, not a guarantee.",
+	"Your tools just need to satisfy the SDK's small `Tool` interface:":                                          "Introduces the Tool interface listing that follows.",
+	"[Configuration]({{< relref \"/configuration\" >}}) — every `Init` option, defaults, and enforcement modes.": structural,
+	"[Core Concepts]({{< relref \"/core-concepts\" >}}) — what's actually happening inside the SDK.":             structural,
+	"[Guides]({{< relref \"/guides\" >}}) — wrap a real agent, integrate a framework, handle decisions.":         structural,
+	"[Troubleshooting]({{< relref \"/troubleshooting\" >}}) — what to do when `Init` or a check fails.":          structural,
+	"_Governance slice from the runnable `go/basic-agent/main.go` example._":                                     structural,
+	"_Governance slice from the runnable `go/langchaingo/main.go` example._":                                     structural,
+	"`Init` returns an `*assembly.Assembly` — your runtime handle.":                                              "Names the concrete type Init returns. A signature description.",
+	"`Init` shells out to the following command to auto-start the gateway:":                                      "Introduces the auto-start command shown in the fenced block below.",
+	"{{< /callout >}}":                        structural,
+	"{{< /tab >}} {{< /tabs >}}":              structural,
+	"{{< /tab >}} {{< tab name=\"Plain\" >}}": structural,
+	"{{< callout type=\"note\" >}} **Local-mode transports — `:7391` REST + `:50051` gRPC.**":                                                                                             "The bold heading of the transports callout; the surfaces it introduces are described in the sentences that follow.",
+	"{{< callout type=\"warning\" >}} **Agent registration is not reachable from a plain `go get` today — following this quick-start will not make your agent appear in the dashboard.**": "A pure limitation disclaimer: it states only what the product does NOT do, with no affirmative clause attached. Corroborated while scoping AAASM-5529 — native/aa-ffi-go/Cargo.toml sets publish = false. AAASM-5767 owns closing the gap.",
+	"{{< tabs >}} {{< tab name=\"LangChainGo\" >}}": structural,
 }
 
 var (
@@ -277,7 +294,14 @@ var (
 	headingLine = regexp.MustCompile(`(?m)^#{1,6} .*$`)
 	// '.' and '?' only. '!' is not a terminator: Hugo/mkdocs callouts and
 	// emphatic prose would otherwise split into fragments.
-	sentenceEnd = regexp.MustCompile(`(?s)[.?]\s`)
+	//
+	// Closing markup between the terminator and the space is consumed WITH the
+	// sentence, so a bold lead-in like "**… dashboard.**" ends there instead of
+	// running into the sentence after it. Without that, an affirmative capability
+	// clause and a disclaimer sat in one string and a single justification
+	// covered both. A backtick is deliberately NOT in the trailing class: inline
+	// code such as `phi.*` would otherwise be read as a sentence end.
+	sentenceEnd = regexp.MustCompile("[.?][*)\\]_\"']*[ \t\n]")
 	ticketRef   = regexp.MustCompile(`AAASM-\d+`)
 )
 
@@ -318,16 +342,29 @@ func splitSentences(paragraph string) []string {
 	out := make([]string, 0, len(locs)+1)
 	start := 0
 	for _, loc := range locs {
-		// Keep the terminator with the sentence it ends.
-		out = append(out, paragraph[start:loc[0]+1])
-		start = loc[1]
+		// Keep the terminator AND its closing markup with the sentence they end;
+		// only the trailing whitespace byte is dropped.
+		out = append(out, paragraph[start:loc[1]-1])
+		start = loc[1] - 1
 	}
 	return append(out, paragraph[start:])
 }
 
-// scannedSentences returns flattened sentence -> section heading for the WHOLE
+// occurrence is one sentence at one place in the document.
+type occurrence struct {
+	text    string
+	section string
+}
+
+// scannedOccurrences returns EVERY (sentence, section) occurrence in the whole
 // document. No section is skipped.
-func scannedSentences(t *testing.T) map[string]string {
+//
+// A slice, not a map. Keying by sentence collapsed duplicates before anything
+// counted them, so "matched == 1" could only ever be 0 or 1 and a bound true
+// sentence could be pasted into a section that inverts its meaning — an
+// observe-mode block, a "what not to do" block — and still count once. Section
+// attribution was last-write-wins for the same reason.
+func scannedOccurrences(t *testing.T) []occurrence {
 	t.Helper()
 
 	body := readDocument(t)
@@ -336,7 +373,7 @@ func scannedSentences(t *testing.T) map[string]string {
 		body = pattern.ReplaceAllString(body, "\n\n")
 	}
 
-	sentences := make(map[string]string)
+	var occurrences []occurrence
 	section := "(preamble)"
 	offset := 0
 	bounds := append(headingLine.FindAllStringIndex(body, -1), []int{len(body), len(body)})
@@ -345,7 +382,7 @@ func scannedSentences(t *testing.T) map[string]string {
 			for _, unit := range splitUnits(paragraph) {
 				for _, raw := range splitSentences(listMarker.ReplaceAllString(unit, "")) {
 					if flat := flattenMarkdown(raw); flat != "" {
-						sentences[flat] = section
+						occurrences = append(occurrences, occurrence{text: flat, section: section})
 					}
 				}
 			}
@@ -355,7 +392,18 @@ func scannedSentences(t *testing.T) map[string]string {
 		}
 		offset = loc[1]
 	}
-	return sentences
+	return occurrences
+}
+
+// scannedTexts is the de-duplicated set, for membership questions where the
+// number of occurrences does not matter.
+func scannedTexts(t *testing.T) map[string]bool {
+	t.Helper()
+	texts := make(map[string]bool)
+	for _, occ := range scannedOccurrences(t) {
+		texts[occ.text] = true
+	}
+	return texts
 }
 
 // controlNodeIDs extracts "<file> :: TestName/Subtest" ids from every control
@@ -447,15 +495,15 @@ func sentinelNamesByMessage(t *testing.T) map[string]string {
 // An empty parse and a clean result look identical.
 func TestClaimGateCanSeeWhatItGates(t *testing.T) {
 	t.Run("TheWholeDocumentIsReadAndSplit", func(t *testing.T) {
-		if n := len(scannedSentences(t)); n < 30 {
+		if n := len(scannedOccurrences(t)); n < 30 {
 			t.Fatalf("only %d sentences parsed from the whole quick-start", n)
 		}
 	})
 
 	t.Run("TheScanReachesEverySectionIncludingTheLast", func(t *testing.T) {
 		sections := make(map[string]bool)
-		for _, section := range scannedSentences(t) {
-			sections[section] = true
+		for _, occ := range scannedOccurrences(t) {
+			sections[occ.section] = true
 		}
 		if len(sections) < 5 {
 			t.Fatalf("the scan reached only %d sections: %v", len(sections), sections)
@@ -472,9 +520,9 @@ func TestClaimGateCanSeeWhatItGates(t *testing.T) {
 		if !strings.Contains(document, "<!--") {
 			t.Skip("the quick-start no longer contains an HTML comment; nothing to prove here")
 		}
-		for sentence := range scannedSentences(t) {
-			if strings.Contains(sentence, "<!--") || strings.Contains(sentence, "-->") {
-				t.Fatalf("HTML comment markup leaked into the scan: %q", sentence)
+		for text := range scannedTexts(t) {
+			if strings.Contains(text, "<!--") || strings.Contains(text, "-->") {
+				t.Fatalf("HTML comment markup leaked into the scan: %q", text)
 			}
 		}
 	})
@@ -510,13 +558,16 @@ func TestEverySentenceIsAccountedFor(t *testing.T) {
 		for _, binding := range quickStartClaimBindings {
 			quotes[binding.quote] = true
 		}
-		for sentence, section := range scannedSentences(t) {
-			if quotes[sentence] {
+		reported := map[string]bool{}
+		for _, occ := range scannedOccurrences(t) {
+			sentence, section := occ.text, occ.section
+			if quotes[sentence] || reported[sentence] {
 				continue
 			}
 			if _, allowed := allowedSentences[sentence]; allowed {
 				continue
 			}
+			reported[sentence] = true
 			severity := "prose"
 			if enforcementVocabulary.MatchString(sentence) {
 				severity = "CLAIM-LIKE"
@@ -541,19 +592,22 @@ func TestEverySentenceIsAccountedFor(t *testing.T) {
 	})
 
 	t.Run("EachBindingMatchesExactlyOneWholeSentence", func(t *testing.T) {
-		scanned := scannedSentences(t)
+		occurrences := scannedOccurrences(t)
 		for _, binding := range quickStartClaimBindings {
-			matches := 0
-			for sentence := range scanned {
-				if sentence == binding.quote {
-					matches++
+			var where []string
+			for _, occ := range occurrences {
+				if occ.text == binding.quote {
+					where = append(where, occ.section)
 				}
 			}
-			if matches != 1 {
-				t.Errorf("claim binding %q must match exactly one whole sentence in %s; it matched %d.\n"+
-					"Its quote is:\n  %q\n"+
-					"The claim was reworded, split, merged, or commented out.",
-					binding.id, quickStartDoc, matches, binding.quote)
+			if len(where) != 1 {
+				t.Errorf("claim binding %q must match exactly one whole sentence occurrence in %s; "+
+					"it matched %d (sections: %v).\nIts quote is:\n  %q\n"+
+					"0 means the claim was reworded, split, merged, or commented out.\n"+
+					"More than 1 means the same sentence now appears in more than one place, which is "+
+					"not harmless: a true claim pasted into a section that inverts its meaning would "+
+					"otherwise still be counted by this binding as the sentence that was proven.",
+					binding.id, quickStartDoc, len(where), where, binding.quote)
 			}
 		}
 	})
@@ -573,9 +627,9 @@ func TestEverySentenceIsAccountedFor(t *testing.T) {
 // the new hole.
 func TestTheAllowListCannotBecomeABypass(t *testing.T) {
 	t.Run("EveryAllowedSentenceIsStillPresentVerbatim", func(t *testing.T) {
-		scanned := scannedSentences(t)
+		scanned := scannedTexts(t)
 		for sentence := range allowedSentences {
-			if _, present := scanned[sentence]; !present {
+			if !scanned[sentence] {
 				t.Errorf("allowedSentences contains a sentence that no longer appears in %s:\n  %q\n"+
 					"It was reworded or removed. Delete the stale entry, and if the replacement makes "+
 					"a capability claim, bind it.", quickStartDoc, sentence)
@@ -583,19 +637,63 @@ func TestTheAllowListCannotBecomeABypass(t *testing.T) {
 		}
 	})
 
-	t.Run("AClaimLikeSentenceNeedsAWrittenJustification", func(t *testing.T) {
-		// Waving through a sentence that reads like a claim must cost a
-		// sentence of prose. The categories are deliberately unusable here.
+	t.Run("OnlyStructuralLinesMayUseTheBareConstant", func(t *testing.T) {
+		// Every prose entry needs a written justification, not only the ones the
+		// vocabulary already catches. Keying off the vocabulary was backwards: a
+		// sentence that MATCHES it has already warned the author; one that
+		// EVADES it has not, and evading it is why this scan was inverted.
 		for sentence, reason := range allowedSentences {
-			if !enforcementVocabulary.MatchString(sentence) {
+			if reason == structural && !structuralLine.MatchString(sentence) {
+				t.Errorf("this allow-listed sentence is prose but is waved through with the bare "+
+					"structural constant:\n  %q\n"+
+					"Replace it with a written justification saying why this particular sentence "+
+					"makes no capability claim, or bind it.", sentence)
+			}
+		}
+	})
+
+	t.Run("ADisclaimerJustificationMayNotCoverASentenceThatTurns", func(t *testing.T) {
+		// A sentence can under-claim and over-claim at once. "Network-layer
+		// interception is not enabled by default, because the in-process adapter
+		// already verifies every outbound request before it leaves the host."
+		// reads as a limitation and carries a fabrication after the comma.
+		// Rather than judge each case, reject the shape: a disclaimer
+		// justification may not cover a sentence containing a contrastive
+		// conjunction. The affirmative clause must be split out and bound.
+		for sentence, reason := range allowedSentences {
+			if !strings.Contains(reason, disclaimerMarker) {
 				continue
 			}
-			if reason == notAClaim || reason == navigation {
-				t.Errorf("this allow-listed sentence matches the enforcement vocabulary but is waved "+
-					"through with a bare category:\n  %q\n"+
-					"Replace the category with a written justification saying why it makes no "+
-					"capability claim, or bind it.", sentence)
+			if contrastiveConjunction.MatchString(sentence) {
+				t.Errorf("this sentence is allow-listed as a limitation disclaimer but contains a "+
+					"contrastive conjunction, so part of it may be an affirmative capability claim "+
+					"riding along under the disclaimer:\n  %q\n"+
+					"Split the affirmative clause into its own sentence and bind it to the controls "+
+					"that prove it.", sentence)
 			}
+		}
+	})
+
+	t.Run("WrittenJustificationsAreSubstantialAndDistinct", func(t *testing.T) {
+		// A cheap partial, and only that. No gate can tell a justification from
+		// noise — reason="x" is prose to a computer. Length and uniqueness only
+		// make the two cheapest ways of waving something through, an empty
+		// gesture and a copy-paste, visible in review.
+		seen := map[string]string{}
+		for sentence, reason := range allowedSentences {
+			if reason == structural {
+				continue
+			}
+			if len(reason) < minJustification {
+				t.Errorf("justification shorter than %d characters for:\n  %q\n  reason: %q",
+					minJustification, sentence, reason)
+			}
+			if other, dup := seen[reason]; dup {
+				t.Errorf("the same justification is reused for two sentences:\n  %q\n  used by %q\n  and by %q\n"+
+					"A justification explains one specific sentence; reuse is copy-paste waving.",
+					reason, other, sentence)
+			}
+			seen[reason] = sentence
 		}
 	})
 
