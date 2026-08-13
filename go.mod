@@ -11,6 +11,7 @@ toolchain go1.26.5
 require (
 	github.com/oklog/ulid/v2 v2.1.2
 	go.opentelemetry.io/otel/trace v1.45.0
+	golang.org/x/tools v0.48.0
 	google.golang.org/grpc v1.83.0
 	google.golang.org/protobuf v1.36.11
 	gopkg.in/yaml.v3 v3.0.1
@@ -25,7 +26,6 @@ require (
 	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/telemetry v0.0.0-20260710170516-c325552849a7 // indirect
 	golang.org/x/text v0.40.0 // indirect
-	golang.org/x/tools v0.48.0 // indirect
 	golang.org/x/vuln v1.6.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260706201446-f0a921348800 // indirect
 )

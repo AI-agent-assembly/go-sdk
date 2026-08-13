@@ -26,26 +26,19 @@ package assembly
 
 import (
 	"context"
-	"go/ast"
-	"go/parser"
-	"go/token"
-	"os"
+	"go/types"
 	"sort"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/ai-agent-assembly/go-sdk/internal/ffi"
+	"golang.org/x/tools/go/packages"
 )
 
 // auditProbePayload is distinctive enough that finding it anywhere downstream is
 // unambiguous.
 const auditProbePayload = "AUDIT-PROBE-AAASM-5731"
-
-// governanceClientShape is the method set that makes a type a GovernanceClient.
-// Membership is decided by SHAPE, not by name: a shipped client cannot escape
-// the gate below by being called something else.
-var governanceClientShape = []string{"Check", "WaitForApproval", "RecordResult", "Close"}
 
 type auditProbeTool struct {
 	name   string
@@ -89,32 +82,80 @@ func (c *forwardingGovernanceClient) Close() error { return nil }
 // TestEveryShippedGovernanceClientDeclaresItsAuditSink is the exhaustiveness
 // gate.
 //
-// It reads the package's own source rather than a hand-maintained list of
-// clients, because a list is not a gate: a new shipped client would pass by
-// omission, which is exactly how a silently-discarding sink got here. Any type
-// declaring the full GovernanceClient method set must also declare AuditSink.
+// It resolves the module's real type information rather than a hand-maintained
+// list of clients, because a list is not a gate: a new shipped client would pass
+// by omission, which is exactly how a silently-discarding sink got here.
+//
+// It uses go/types rather than an AST walk over method declarations. Review of
+// #198 demonstrated why that distinction is load-bearing: go/parser sees only the
+// methods DECLARED on a named type, never the ones PROMOTED into it by embedding,
+// so a `retryingGovernanceClient{ffiGovernanceClient}` wrapper declaring nothing
+// but RecordResult is a complete GovernanceClient with no AuditSink anywhere in
+// its method set — and the AST version of this gate passed it. types.Implements
+// resolves the full method set, promotion included.
+//
+// It also loads ./... rather than the working directory, so an implementation
+// that lands in any package of this module is covered, not only assembly's.
 func TestEveryShippedGovernanceClientDeclaresItsAuditSink(t *testing.T) {
-	methodsByType := declaredMethodsByType(t)
+	loaded, err := packages.Load(&packages.Config{
+		Mode: packages.NeedName | packages.NeedTypes | packages.NeedDeps | packages.NeedImports,
+		// Tests:false deliberately — the gate covers what this module SHIPS. A
+		// probe client living in a _test.go file is not shipped, and including
+		// test binaries would make the gate fail on its own fixtures.
+		Tests: false,
+	}, "./...")
+	if err != nil {
+		t.Fatalf("load module packages: %v", err)
+	}
+	if packages.PrintErrors(loaded) > 0 {
+		t.Fatal("packages loaded with errors; the gate cannot be trusted on partial type information")
+	}
+
+	govIface, declIface := lookupGateInterfaces(t, loaded)
 
 	var implementations, undeclared []string
-	for typeName, methods := range methodsByType {
-		if !hasAll(methods, governanceClientShape) {
+	for _, pkg := range loaded {
+		if pkg.Types == nil {
 			continue
 		}
-		implementations = append(implementations, typeName)
-		if !methods["AuditSink"] {
-			undeclared = append(undeclared, typeName)
+		scope := pkg.Types.Scope()
+		for _, name := range scope.Names() {
+			named, ok := scope.Lookup(name).(*types.TypeName)
+			if !ok || types.IsInterface(named.Type()) {
+				// An interface trivially "implements" itself; only concrete
+				// clients are shipped.
+				continue
+			}
+			// Method sets differ between T and *T, and a client is almost always
+			// used through the pointer. Check both so a value-receiver
+			// implementation cannot slip past.
+			for _, candidate := range []types.Type{named.Type(), types.NewPointer(named.Type())} {
+				if !types.Implements(candidate, govIface) {
+					continue
+				}
+				// types.Type.String() is already fully qualified; prefixing
+				// PkgPath again produced a doubled path in the failure message.
+				label := types.TypeString(candidate, func(p *types.Package) string {
+					return p.Name()
+				})
+				implementations = append(implementations, label)
+				if !types.Implements(candidate, declIface) {
+					undeclared = append(undeclared, label)
+				}
+				break // do not double-count T and *T
+			}
 		}
 	}
 	sort.Strings(implementations)
 	sort.Strings(undeclared)
 
-	// Positive control: the scan must actually find the one client this package
-	// is known to ship. An empty implementations slice would otherwise make the
-	// undeclared check vacuously true.
+	// Positive control: the scan must find the client this module is known to
+	// ship. An empty slice would make the undeclared check vacuously true — the
+	// same "measured zero from a probe that never ran" the rest of this file
+	// guards against.
 	if len(implementations) == 0 {
-		t.Fatal("found no GovernanceClient implementation in this package's non-test sources; " +
-			"the source scan is broken, so its empty result proves nothing")
+		t.Fatal("found no GovernanceClient implementation anywhere in this module; the type " +
+			"scan is broken, so its empty result proves nothing")
 	}
 	if len(undeclared) > 0 {
 		t.Fatalf("GovernanceClient implementation(s) %v ship without an AuditSink() declaration; "+
@@ -122,6 +163,38 @@ func TestEveryShippedGovernanceClientDeclaresItsAuditSink(t *testing.T) {
 			"shipped client must say what it does with it (AAASM-5731). Found implementations: %v",
 			undeclared, implementations)
 	}
+}
+
+// lookupGateInterfaces resolves the two interfaces the gate compares against from
+// the loaded type information, so the gate cannot silently degrade if either is
+// renamed or moved.
+func lookupGateInterfaces(t *testing.T, loaded []*packages.Package) (govIface, declIface *types.Interface) {
+	t.Helper()
+	const assemblyPkg = "github.com/ai-agent-assembly/go-sdk/assembly"
+	for _, pkg := range loaded {
+		if pkg.PkgPath != assemblyPkg || pkg.Types == nil {
+			continue
+		}
+		govIface = asInterface(t, pkg.Types.Scope(), "GovernanceClient")
+		declIface = asInterface(t, pkg.Types.Scope(), "AuditSinkDeclarer")
+	}
+	if govIface == nil || declIface == nil {
+		t.Fatalf("could not resolve GovernanceClient / AuditSinkDeclarer in %s", assemblyPkg)
+	}
+	return govIface, declIface
+}
+
+func asInterface(t *testing.T, scope *types.Scope, name string) *types.Interface {
+	t.Helper()
+	obj := scope.Lookup(name)
+	if obj == nil {
+		t.Fatalf("type %q not found", name)
+	}
+	iface, ok := obj.Type().Underlying().(*types.Interface)
+	if !ok {
+		t.Fatalf("type %q is not an interface", name)
+	}
+	return iface
 }
 
 // TestShippedClientDeclaringNoRetentionReachesNothing measures the declaration
@@ -279,67 +352,4 @@ func TestInitWarnsAboutTheAuditGapOnTheDefaultPath(t *testing.T) {
 // test cannot synchronise on one without changing the thing it measures.
 func awaitRecordDispatch() {
 	time.Sleep(250 * time.Millisecond)
-}
-
-// declaredMethodsByType parses this package's non-test sources and returns, per
-// named type, the set of methods declared on it (value or pointer receiver).
-func declaredMethodsByType(t *testing.T) map[string]map[string]bool {
-	t.Helper()
-
-	entries, err := os.ReadDir(".")
-	if err != nil {
-		t.Fatalf("read package directory: %v", err)
-	}
-
-	// Files are walked directly rather than through a package loader so that
-	// build-constrained files are scanned too: a client shipped only on one GOOS
-	// is still a shipped client, and a loader would silently drop it from the
-	// gate on every other platform.
-	fileSet := token.NewFileSet()
-	methodsByType := map[string]map[string]bool{}
-	for _, entry := range entries {
-		name := entry.Name()
-		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
-			continue
-		}
-		file, err := parser.ParseFile(fileSet, name, nil, 0)
-		if err != nil {
-			t.Fatalf("parse %s: %v", name, err)
-		}
-		for _, decl := range file.Decls {
-			funcDecl, ok := decl.(*ast.FuncDecl)
-			if !ok || funcDecl.Recv == nil || len(funcDecl.Recv.List) == 0 {
-				continue
-			}
-			typeName := receiverTypeName(funcDecl.Recv.List[0].Type)
-			if typeName == "" {
-				continue
-			}
-			if methodsByType[typeName] == nil {
-				methodsByType[typeName] = map[string]bool{}
-			}
-			methodsByType[typeName][funcDecl.Name.Name] = true
-		}
-	}
-	return methodsByType
-}
-
-func receiverTypeName(expr ast.Expr) string {
-	switch typed := expr.(type) {
-	case *ast.StarExpr:
-		return receiverTypeName(typed.X)
-	case *ast.Ident:
-		return typed.Name
-	default:
-		return ""
-	}
-}
-
-func hasAll(methods map[string]bool, required []string) bool {
-	for _, name := range required {
-		if !methods[name] {
-			return false
-		}
-	}
-	return true
 }
