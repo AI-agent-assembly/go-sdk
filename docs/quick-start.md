@@ -157,8 +157,8 @@ runnable example in the
 surface is thin today, so the tabs are **LangChainGo** (the framework path) and
 **Plain** (the framework-agnostic path). Two more validated Go examples already
 exist — **Tool Policy** and **CLI Runtime (sidecar)**. Those are patterns
-(an allow/deny policy demo and sidecar wiring), not "first agent" frameworks, so
-they're intentionally left out of this quick-start; see
+(an allow/deny policy demo and sidecar wiring), not "first agent" frameworks.
+They're intentionally left out of this quick-start; see
 `metadata/quickstart/README.md` for the tab-selection rationale. A new tab
 appears automatically once a new Go **framework** example lands.
 

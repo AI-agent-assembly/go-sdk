@@ -107,6 +107,24 @@ const structural = "Structurally non-prose: a line that is entirely Hugo shortco
 // Only a line that is entirely Hugo shortcodes qualifies now.
 var structuralLine = regexp.MustCompile(`^\{\{<[^>]*>\}\}(\s*\{\{<[^>]*>\}\})*$`)
 
+// negation / soConnector implement the "so" rule, which is deliberately not
+// part of contrastiveConjunction above.
+//
+// The risk "so" carries is not adversativeness but POLARITY CHANGE. "We don't
+// do X but Y" is a concession; "we don't do X so Y covers it" is a REASSURANCE,
+// and reassurance is the register documentation over-claims in. A negated
+// clause followed by an un-negated one is the shape that hides an affirmative
+// capability claim behind a limitation.
+//
+// Flagging "so" flat would catch six live sentences across the three repos,
+// every one of which turns the way it started — four of them in this file.
+// This form catches none of them and still catches the payload, which is the
+// only negative-to-positive case.
+var (
+	negation    = regexp.MustCompile(`(?i)\b(?:not|no|never|cannot|can't|without)\b`)
+	soConnector = regexp.MustCompile(`(?i)\sso\s`)
+)
+
 // minJustification is a floor, not a real check: no gate can tell a
 // justification from noise. It only makes reason="x" visible.
 const minJustification = 40
@@ -242,13 +260,14 @@ var quickStartClaimBindings = []claimBinding{
 // exactly. A category is permitted only where the sentence does not match
 // enforcementVocabulary; anything that does carries a written justification.
 var allowedSentences = map[string]string{
-	"Two more validated Go examples already exist — **Tool Policy** and **CLI Runtime (sidecar)**.":                                                                                                                                  "Names two examples that exist outside this quick-start. An inventory statement about the examples repo.",
-	"Those are patterns (an allow/deny policy demo and sidecar wiring), not \"first agent\" frameworks, so they're intentionally left out of this quick-start; see `metadata/quickstart/README.md` for the tab-selection rationale.": "Explains why those two examples are not shown as tabs. Editorial, about the page's tab selection rather than the product.",
-	"*(Optional)* a C compiler, only if you opt into the native FFI transport with `-tags aa_ffi_go`.":                                                                                                                               "A prerequisites bullet naming a build dependency and when it is needed.",
-	"**Go** ≥ 1.26 (the floor declared in `go.mod`).":                                                  "A prerequisites bullet naming the language version floor.",
-	"**Tool calls run** and return the inner tool's result.":                                           "The allowed-path half of the What-to-expect bullet, stating only that a permitted call returns normally; the deny half is the next sentence, which is bound.",
-	"**[Examples]({{< relref \"/examples\" >}})** — wire the SDK into the framework you actually use.": "A Where-to-next link item pointing at the examples index. An invitation to read further.",
-	"A new tab appears automatically once a new Go **framework** example lands.":                       "Describes how the tab list is generated. Documentation mechanics.",
+	"Two more validated Go examples already exist — **Tool Policy** and **CLI Runtime (sidecar)**.":                                                                                                                                                                              "Names two examples that exist outside this quick-start. An inventory statement about the examples repo.",
+	"Those are patterns (an allow/deny policy demo and sidecar wiring), not \"first agent\" frameworks.":                                                                                                                                                                         "Classifies the two examples that are not shown as tabs. An inventory statement about what they are.",
+	"They're intentionally left out of this quick-start; see `metadata/quickstart/README.md` for the tab-selection rationale.":                                                                                                                                                   "Explains the tab-selection decision and points at its rationale. Editorial, about the page rather than the product.",
+	"*(Optional)* a C compiler, only if you opt into the native FFI transport with `-tags aa_ffi_go`.":                                                                                                                                                                           "A prerequisites bullet naming a build dependency and when it is needed.",
+	"**Go** ≥ 1.26 (the floor declared in `go.mod`).":                                                                                                                                                                                                                            "A prerequisites bullet naming the language version floor.",
+	"**Tool calls run** and return the inner tool's result.":                                                                                                                                                                                                                     "The allowed-path half of the What-to-expect bullet, stating only that a permitted call returns normally; the deny half is the next sentence, which is bound.",
+	"**[Examples]({{< relref \"/examples\" >}})** — wire the SDK into the framework you actually use.":                                                                                                                                                                           "A Where-to-next link item pointing at the examples index. An invitation to read further.",
+	"A new tab appears automatically once a new Go **framework** example lands.":                                                                                                                                                                                                 "Describes how the tab list is generated. Documentation mechanics.",
 	"Agent **registration** is a separate concern that talks to the gateway's gRPC endpoint (default `127.0.0.1:50051`) — `Init` does **not** auto-derive this address the way the Python and Node SDKs do.":                                                                     "Distinguishes registration from gateway resolution and states that Go does less here than the other SDKs. A narrowing statement.",
 	"Always `Close` it when you're done so the connection (and any managed sidecar) is released.":                                                                                                                                                                                "Lifecycle instruction for the handle returned by Init.",
 	"And per the warning at the top of this page, the registration handshake itself only runs under the opt-in native cgo binding today.":                                                                                                                                        "Repeats the registration limitation from the page's warning callout. A restriction, and it names no capability the SDK is claimed to have.",
@@ -265,19 +284,19 @@ var allowedSentences = map[string]string{
 	"See [Configuration]({{< relref \"/configuration#gateway-and-credential-resolution\" >}}) for the full resolution order.":                                                                                                                                                    "A cross-reference to the credential-resolution documentation.",
 	"The `:7391` auto-discovery above only resolves the REST gateway URL.":                                                                                                                                                                                                       "Scopes what auto-discovery covers, narrowing rather than widening the claim above it.",
 	"The default pure-Go build has no native transport, so it does not register even when [`WithSidecarAddress`](https://pkg.go.dev/github.com/ai-agent-assembly/go-sdk/assembly#WithSidecarAddress) is set (see that option's godoc).":                                          "States that the default build cannot register at all. Purely a limitation, and it contains no affirmative capability clause.",
-	"The default transport is pure-Go and needs none.":                                                           "States that the default build needs no C compiler, continuing the prerequisites bullet.",
-	"The second argument is the `GovernanceClient` that talks to the gateway.":                                   "Names what the second WrapTools parameter is. A signature description.",
-	"The whole thing is a single `main` you can copy, paste, and run.":                                           "Describes the shape of the example below it.",
-	"To confirm both surfaces are actually up rather than guessing from `Init`'s behavior, check them directly:": "Tells the reader to verify the ports themselves; the commands follow in a fenced block.",
-	"Your tools just need to satisfy the SDK's small `Tool` interface:":                                          "Introduces the Tool interface listing that follows.",
-	"[Configuration]({{< relref \"/configuration\" >}}) — every `Init` option, defaults, and enforcement modes.": "A Where-to-next link item pointing at Configuration; the option reference lives on that page.",
-	"[Core Concepts]({{< relref \"/core-concepts\" >}}) — what's actually happening inside the SDK.":             "A Where-to-next link item pointing at Core Concepts. Its claims live on that page and are gated there.",
-	"[Guides]({{< relref \"/guides\" >}}) — wrap a real agent, integrate a framework, handle decisions.":         "A Where-to-next link item pointing at the Guides index, listing topics covered elsewhere.",
-	"[Troubleshooting]({{< relref \"/troubleshooting\" >}}) — what to do when `Init` or a check fails.":          "A Where-to-next link item pointing at Troubleshooting, about recovery steps rather than what governance does.",
-	"_Governance slice from the runnable `go/basic-agent/main.go` example._":                                     "An italic caption naming which example file the basic-agent tab was excerpted from.",
-	"_Governance slice from the runnable `go/langchaingo/main.go` example._":                                     "An italic caption naming which example file the LangChainGo tab was excerpted from.",
-	"`Init` returns an `*assembly.Assembly` — your runtime handle.":                                              "Names the concrete type Init returns. A signature description.",
-	"`Init` shells out to the following command to auto-start the gateway:":                                      "Introduces the auto-start command shown in the fenced block below.",
+	"The default transport is pure-Go and needs none.":                                                                                                                                                                                                                           "States that the default build needs no C compiler, continuing the prerequisites bullet.",
+	"The second argument is the `GovernanceClient` that talks to the gateway.":                                                                                                                                                                                                   "Names what the second WrapTools parameter is. A signature description.",
+	"The whole thing is a single `main` you can copy, paste, and run.":                                                                                                                                                                                                           "Describes the shape of the example below it.",
+	"To confirm both surfaces are actually up rather than guessing from `Init`'s behavior, check them directly:":                                                                                                                                                                 "Tells the reader to verify the ports themselves; the commands follow in a fenced block.",
+	"Your tools just need to satisfy the SDK's small `Tool` interface:":                                                                                                                                                                                                          "Introduces the Tool interface listing that follows.",
+	"[Configuration]({{< relref \"/configuration\" >}}) — every `Init` option, defaults, and enforcement modes.":                                                                                                                                                                 "A Where-to-next link item pointing at Configuration; the option reference lives on that page.",
+	"[Core Concepts]({{< relref \"/core-concepts\" >}}) — what's actually happening inside the SDK.":                                                                                                                                                                             "A Where-to-next link item pointing at Core Concepts. Its claims live on that page and are gated there.",
+	"[Guides]({{< relref \"/guides\" >}}) — wrap a real agent, integrate a framework, handle decisions.":                                                                                                                                                                         "A Where-to-next link item pointing at the Guides index, listing topics covered elsewhere.",
+	"[Troubleshooting]({{< relref \"/troubleshooting\" >}}) — what to do when `Init` or a check fails.":                                                                                                                                                                          "A Where-to-next link item pointing at Troubleshooting, about recovery steps rather than what governance does.",
+	"_Governance slice from the runnable `go/basic-agent/main.go` example._":                                                                                                                                                                                                     "An italic caption naming which example file the basic-agent tab was excerpted from.",
+	"_Governance slice from the runnable `go/langchaingo/main.go` example._":                                                                                                                                                                                                     "An italic caption naming which example file the LangChainGo tab was excerpted from.",
+	"`Init` returns an `*assembly.Assembly` — your runtime handle.":                                                                                                                                                                                                              "Names the concrete type Init returns. A signature description.",
+	"`Init` shells out to the following command to auto-start the gateway:":                                                                                                                                                                                                      "Introduces the auto-start command shown in the fenced block below.",
 	"{{< /callout >}}":                        structural,
 	"{{< /tab >}} {{< /tabs >}}":              structural,
 	"{{< /tab >}} {{< tab name=\"Plain\" >}}": structural,
@@ -674,6 +693,29 @@ func TestTheAllowListCannotBecomeABypass(t *testing.T) {
 					"justification:\n  %q\n"+
 					"Split the affirmative clause into its own sentence and bind it to the controls "+
 					"that prove it.", sentence)
+			}
+		}
+	})
+
+	t.Run("NoAllowListedSentenceReassuresAcrossANegation", func(t *testing.T) {
+		// "Network-layer interception is not enabled by default, so the
+		// in-process adapter verifies every outbound request before it leaves
+		// the host instead." reads as a limitation and asserts a capability the
+		// product does not have. contrastiveConjunction does not catch it,
+		// because "so" is not adversative — it is the reassurance that follows
+		// a denial, which is precisely where an unbacked claim hides.
+		for sentence := range allowedSentences {
+			for _, loc := range soConnector.FindAllStringIndex(sentence, -1) {
+				before, after := sentence[:loc[0]], sentence[loc[1]:]
+				if negation.MatchString(before) && !negation.MatchString(after) {
+					t.Errorf("this allow-listed sentence negates something and then says \"so …\" "+
+						"without a second negation — the shape of a limitation followed by a "+
+						"reassurance, where the reassurance may be an unbacked capability "+
+						"claim:\n  %q\n"+
+						"Split the clause after \"so\" into its own sentence and bind it to the "+
+						"controls that prove it.", sentence)
+					break
+				}
 			}
 		}
 	})
