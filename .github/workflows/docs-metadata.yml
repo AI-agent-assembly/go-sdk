@@ -68,3 +68,19 @@ jobs:
             echo "::error::Generated docs metadata is stale. Run 'go generate ./...' and commit the result."
             exit 1
           fi
+
+      # AAASM-5529. The generator check above round-trips the quickstart-tabs
+      # block as TEXT: it proves the committed doc matches metadata/quickstart/
+      # and nothing more — the .go.txt fragments are never compiled or run.
+      #
+      # This step gates a different surface: the prose in the WrapTools section
+      # and "What to expect", where the quick-start states what governance does.
+      # Each claim is bound to the control that proves it.
+      #
+      # It runs HERE rather than only in go-test.yml because that workflow sets
+      # paths-ignore on docs/** and **/*.md, so a docs-only PR — precisely the
+      # change that rewords a claim — runs no Go tests at all. This workflow
+      # ignores only LICENSE, so it sees every PR.
+      - name: Every documented enforcement claim names the control that proves it
+        run: |
+          go test ./assembly/ -run 'TestClaimGateCanSeeWhatItGates|TestEveryDocumentedClaimIsBound|TestEveryBindingNamesSomethingReal|TestTheDocumented' -v
