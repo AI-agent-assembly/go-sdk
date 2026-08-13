@@ -145,7 +145,9 @@ func TestTerminatedOpDeniesBeforeGatewayCheck(t *testing.T) {
 //
 // It asserts the wrapper's call to RecordResult, which is a test double here.
 // The production client discards the record — see ffiGovernanceClient — so a
-// terminated-op deny is Unmeasured in audit evidence on the shipped path.
+// terminated-op deny produces no audit evidence on the shipped path. Under ADR
+// 0033 §6 that is Planned (AAASM-5731), not Unmeasured: where the record stops
+// has been measured, so it is not the "nothing is known" state.
 func TestTerminatedOpDenyCallsRecordResult(t *testing.T) {
 	t.Parallel()
 
