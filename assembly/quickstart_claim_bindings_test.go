@@ -95,27 +95,36 @@ var enforcementVocabulary = regexp.MustCompile(
 // enforcement vocabulary, which is backwards: the sentences that most need
 // explaining are the ones that EVADE the vocabulary, since evading it is the
 // whole reason the scan was inverted.
-const structural = "Structurally non-prose: a bare shortcode, tab caption, table row, or link-list item."
+const structural = "Structurally non-prose: a line that is entirely Hugo shortcodes and carries no sentence."
 
-// structuralLine matches the lines that may use the bare constant. A callout
-// whose shortcode is followed by prose is NOT structural.
-var structuralLine = regexp.MustCompile(`^\{\{<[^>]*>\}\}(\s*\{\{<[^>]*>\}\})*$|^\||^_Governance slice|^\*\*\[|^\[`)
+// structuralLine matches the lines that may use the bare constant.
+//
+// Fully anchored, and deliberately narrow. The previous pattern asked whether a
+// sentence STARTED with structure, not whether it was ONLY structure, so a link
+// item or a table row was waved through on its first characters while its
+// anchor text — rendered prose a reader sees — went unexamined. A payload as
+// plain as "[Every tool request is permitted to proceed…](x.md)" passed.
+// Only a line that is entirely Hugo shortcodes qualifies now.
+var structuralLine = regexp.MustCompile(`^\{\{<[^>]*>\}\}(\s*\{\{<[^>]*>\}\})*$`)
 
 // minJustification is a floor, not a real check: no gate can tell a
 // justification from noise. It only makes reason="x" visible.
 const minJustification = 40
 
-// contrastiveConjunction marks a sentence that turns mid-way. A justification
-// arguing "this only says what the product does NOT do" cannot be trusted for
-// such a sentence, because the clause after the turn may be an affirmative
-// capability claim riding along under the disclaimer. Review found exactly that
-// shape shipped here: "The steps below wrap and govern tool calls, but the
-// register handshake runs only under..." was waved through as a disclaimer.
-var contrastiveConjunction = regexp.MustCompile(`(?i)\s(?:but|because|so|while|though|although|however)\s`)
-
-// disclaimerMarker identifies a justification that rests on the sentence being
-// a limitation. Those are the entries the rule above polices.
-const disclaimerMarker = "limitation disclaimer"
+// contrastiveConjunction marks a sentence that turns mid-way. Such a sentence
+// can under-claim and over-claim at once, and a justification arguing "this only
+// says what the product does NOT do" cannot be trusted for one that turns.
+//
+// Applied to EVERY allow-listed sentence, not only those whose justification
+// calls itself a disclaimer. The previous version keyed off a marker phrase
+// matched case-sensitively, which made the rule opt-in by the author it
+// constrains: capitalising the phrase, or omitting it, evaded the check —
+// and "A LIMITATION disclaimer…" is the wording this file shipped one round ago.
+//
+// "so" is deliberately excluded: it is consequential ("therefore") rather than
+// adversative. Both attack payloads are still caught — the reviewer's used
+// "because" and the live case here used "but".
+var contrastiveConjunction = regexp.MustCompile(`(?i)\s(?:but|because|though|although|however|whereas|while)\s`)
 
 // claimBinding is one documented claim and the controls that stand behind it.
 type claimBinding struct {
@@ -233,10 +242,12 @@ var quickStartClaimBindings = []claimBinding{
 // exactly. A category is permitted only where the sentence does not match
 // enforcementVocabulary; anything that does carries a written justification.
 var allowedSentences = map[string]string{
-	"*(Optional)* a C compiler, only if you opt into the native FFI transport with `-tags aa_ffi_go`.": "A prerequisites bullet naming a build dependency and when it is needed.",
+	"Two more validated Go examples already exist — **Tool Policy** and **CLI Runtime (sidecar)**.":                                                                                                                                  "Names two examples that exist outside this quick-start. An inventory statement about the examples repo.",
+	"Those are patterns (an allow/deny policy demo and sidecar wiring), not \"first agent\" frameworks, so they're intentionally left out of this quick-start; see `metadata/quickstart/README.md` for the tab-selection rationale.": "Explains why those two examples are not shown as tabs. Editorial, about the page's tab selection rather than the product.",
+	"*(Optional)* a C compiler, only if you opt into the native FFI transport with `-tags aa_ffi_go`.":                                                                                                                               "A prerequisites bullet naming a build dependency and when it is needed.",
 	"**Go** ≥ 1.26 (the floor declared in `go.mod`).":                                                  "A prerequisites bullet naming the language version floor.",
 	"**Tool calls run** and return the inner tool's result.":                                           "The allowed-path half of the What-to-expect bullet, stating only that a permitted call returns normally; the deny half is the next sentence, which is bound.",
-	"**[Examples]({{< relref \"/examples\" >}})** — wire the SDK into the framework you actually use.": structural,
+	"**[Examples]({{< relref \"/examples\" >}})** — wire the SDK into the framework you actually use.": "A Where-to-next link item pointing at the examples index. An invitation to read further.",
 	"A new tab appears automatically once a new Go **framework** example lands.":                       "Describes how the tab list is generated. Documentation mechanics.",
 	"Agent **registration** is a separate concern that talks to the gateway's gRPC endpoint (default `127.0.0.1:50051`) — `Init` does **not** auto-derive this address the way the Python and Node SDKs do.":                                                                     "Distinguishes registration from gateway resolution and states that Go does less here than the other SDKs. A narrowing statement.",
 	"Always `Close` it when you're done so the connection (and any managed sidecar) is released.":                                                                                                                                                                                "Lifecycle instruction for the handle returned by Init.",
@@ -258,14 +269,13 @@ var allowedSentences = map[string]string{
 	"The second argument is the `GovernanceClient` that talks to the gateway.":                                   "Names what the second WrapTools parameter is. A signature description.",
 	"The whole thing is a single `main` you can copy, paste, and run.":                                           "Describes the shape of the example below it.",
 	"To confirm both surfaces are actually up rather than guessing from `Init`'s behavior, check them directly:": "Tells the reader to verify the ports themselves; the commands follow in a fenced block.",
-	"Two more validated Go examples already exist — **Tool Policy** and **CLI Runtime (sidecar)** — but those are patterns (an allow/deny policy demo and sidecar wiring), not \"first agent\" frameworks, so they're intentionally left out of this quick-start; see `metadata/quickstart/README.md` for the tab-selection rationale.": "An editorial note about which example tabs the page shows. 'allow/deny policy demo' names an example, not a guarantee.",
 	"Your tools just need to satisfy the SDK's small `Tool` interface:":                                          "Introduces the Tool interface listing that follows.",
-	"[Configuration]({{< relref \"/configuration\" >}}) — every `Init` option, defaults, and enforcement modes.": structural,
-	"[Core Concepts]({{< relref \"/core-concepts\" >}}) — what's actually happening inside the SDK.":             structural,
-	"[Guides]({{< relref \"/guides\" >}}) — wrap a real agent, integrate a framework, handle decisions.":         structural,
-	"[Troubleshooting]({{< relref \"/troubleshooting\" >}}) — what to do when `Init` or a check fails.":          structural,
-	"_Governance slice from the runnable `go/basic-agent/main.go` example._":                                     structural,
-	"_Governance slice from the runnable `go/langchaingo/main.go` example._":                                     structural,
+	"[Configuration]({{< relref \"/configuration\" >}}) — every `Init` option, defaults, and enforcement modes.": "A Where-to-next link item pointing at Configuration; the option reference lives on that page.",
+	"[Core Concepts]({{< relref \"/core-concepts\" >}}) — what's actually happening inside the SDK.":             "A Where-to-next link item pointing at Core Concepts. Its claims live on that page and are gated there.",
+	"[Guides]({{< relref \"/guides\" >}}) — wrap a real agent, integrate a framework, handle decisions.":         "A Where-to-next link item pointing at the Guides index, listing topics covered elsewhere.",
+	"[Troubleshooting]({{< relref \"/troubleshooting\" >}}) — what to do when `Init` or a check fails.":          "A Where-to-next link item pointing at Troubleshooting, about recovery steps rather than what governance does.",
+	"_Governance slice from the runnable `go/basic-agent/main.go` example._":                                     "An italic caption naming which example file the basic-agent tab was excerpted from.",
+	"_Governance slice from the runnable `go/langchaingo/main.go` example._":                                     "An italic caption naming which example file the LangChainGo tab was excerpted from.",
 	"`Init` returns an `*assembly.Assembly` — your runtime handle.":                                              "Names the concrete type Init returns. A signature description.",
 	"`Init` shells out to the following command to auto-start the gateway:":                                      "Introduces the auto-start command shown in the fenced block below.",
 	"{{< /callout >}}":                        structural,
@@ -652,22 +662,16 @@ func TestTheAllowListCannotBecomeABypass(t *testing.T) {
 		}
 	})
 
-	t.Run("ADisclaimerJustificationMayNotCoverASentenceThatTurns", func(t *testing.T) {
-		// A sentence can under-claim and over-claim at once. "Network-layer
-		// interception is not enabled by default, because the in-process adapter
-		// already verifies every outbound request before it leaves the host."
-		// reads as a limitation and carries a fabrication after the comma.
-		// Rather than judge each case, reject the shape: a disclaimer
-		// justification may not cover a sentence containing a contrastive
-		// conjunction. The affirmative clause must be split out and bound.
-		for sentence, reason := range allowedSentences {
-			if !strings.Contains(reason, disclaimerMarker) {
-				continue
-			}
+	t.Run("NoAllowListedSentenceTurnsMidWay", func(t *testing.T) {
+		// Rather than judge each case, reject the shape: an allow-listed
+		// sentence may not contain a contrastive conjunction. It costs nothing
+		// on genuine non-claims, because a sentence that turns should be split
+		// regardless of what its justification says.
+		for sentence := range allowedSentences {
 			if contrastiveConjunction.MatchString(sentence) {
-				t.Errorf("this sentence is allow-listed as a limitation disclaimer but contains a "+
-					"contrastive conjunction, so part of it may be an affirmative capability claim "+
-					"riding along under the disclaimer:\n  %q\n"+
+				t.Errorf("this allow-listed sentence contains a contrastive conjunction, so part of "+
+					"it may be an affirmative capability claim riding along under its "+
+					"justification:\n  %q\n"+
 					"Split the affirmative clause into its own sentence and bind it to the controls "+
 					"that prove it.", sentence)
 			}
