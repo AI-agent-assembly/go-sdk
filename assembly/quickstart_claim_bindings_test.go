@@ -1,44 +1,49 @@
 package assembly
 
-// Drift gate binding the documented Go quick-start's enforcement claims to the
-// controls that prove them (AAASM-5529, Epic AAASM-5526).
+// Drift gate binding the documented Go quick-start's claims to the controls
+// that prove them (AAASM-5529, Epic AAASM-5526).
 //
-// docs/quick-start.md tells a reader what governance does for them. Those
-// sentences are the product's load-bearing enforcement claims, and nothing
-// connected them to the controls that prove them. A claim could be added,
-// reworded, or left standing after the behaviour beneath it changed, and no
-// gate would notice.
+// Every sentence in docs/quick-start.md must be either BOUND to a control that
+// proves it, or explicitly ALLOW-LISTED as making no capability claim. There is
+// no third state and no keyword filter.
+//
+// WHY THE DEFAULT IS INVERTED
+//
+// Earlier revisions only scanned sentences matching an enforcement vocabulary.
+// Review appended three plain sentences using none of the 21 terms — the last,
+// "Tool bodies always execute; the policy result is recorded alongside them",
+// is the negation of the product — and every gate stayed green. Widening 3 -> 21
+// closed the instance, not the class: a keyword allow-list cannot be completed,
+// because whoever adds the claim picks the words after reading the list.
+//
+// The vocabulary now gates nothing. It survives as a severity hint in the
+// failure message, and as the trigger for a stricter allow-list rule: an entry
+// whose sentence reads like a claim needs a written justification, not a
+// category.
+//
+// Section-level exclusions are gone too. An excluded section was a black hole —
+// the guard checked the heading still existed and said nothing about its
+// contents — so a claim inserted into "## Where to next" was never scanned.
 //
 // WHAT THIS GATE PROVES
 //
-//  1. The WHOLE document is scanned, not an opted-in region. Every sentence
-//     using enforcement vocabulary must be bound. Sections and sentences may be
-//     excluded only through the two named allow-lists below, each entry
-//     carrying a reason and an exact sentence, so an allow-list entry cannot
-//     cover a reworded or newly added claim.
-//  2. A binding must match a WHOLE sentence, exactly — compared with ==, never
-//     with strings.Contains. Containment let a sentence carry unlimited extra
-//     unbound claims, up to and including its own negation, as long as one
-//     bound fragment survived.
-//  3. Exactly one binding may match a sentence, so two bindings cannot split
-//     responsibility for one claim and leave neither owning it.
-//  4. Every control a binding names still exists. Control ids are extracted
-//     from each control file's AST as "<file> :: TestName/Subtest".
-//  5. Every claim is proven or openly unproven, with no exempt category. There
-//     was a `kind` field here; it was written and never read, which is worse
-//     than a bypass because a reader assumes it is enforced. Removed.
-//  6. The error type and the sentinel the document names are the ones the SDK
-//     actually produces, both DERIVED rather than transcribed.
+//  1. Every sentence in the document is accounted for.
+//  2. A binding matches a WHOLE sentence, exactly, and only one binding may.
+//  3. Every control a binding names exists, extracted from the control files'
+//     ASTs rather than transcribed.
+//  4. Every claim is proven or openly unproven, and an unproven claim may not
+//     name the ticket this file implements — that pointer resolves to a closed
+//     issue the moment the work merges.
+//  5. Comments are stripped before scanning, because a reader cannot see them.
+//     CommonMark HTML blocks span blank lines, so the strip is non-greedy over
+//     the whole document rather than per paragraph.
 //
 // WHAT THIS GATE DOES NOT PROVE
 //
 // It does not compile or execute a documented snippet. metadata/quickstart/
-// holds .go.txt fragments precisely so the toolchain never sees them
-// (metadata/quickstart/README.md), and the docs-metadata generator check
-// round-trips them as text. This gate does not change that.
-//
-// Binding a claim also does not make it true; where no control stands behind a
-// sentence the binding says so and names a ticket.
+// holds .go.txt fragments precisely so the toolchain never sees them, and the
+// docs-metadata generator check round-trips them as text. Binding a claim does
+// not make it true.
 
 import (
 	"context"
@@ -54,57 +59,39 @@ import (
 	"testing"
 )
 
-const quickStartDoc = "../docs/quick-start.md"
+const (
+	quickStartDoc        = "../docs/quick-start.md"
+	governanceErrorsFile = "governance_errors.go"
 
-// governanceErrorsFile is AST-parsed to recover the NAME of the sentinel the
-// nil-client deny path returns. See TestTheDocumentedSentinelIsTheOneTheNilClientReturns.
-const governanceErrorsFile = "governance_errors.go"
+	// implementingTicket is the ticket this file delivers. An unproven claim may
+	// not name it: on merge that pointer resolves to a closed issue, and the
+	// ticket-shaped check is satisfied by any AAASM-nnnn, open or not.
+	implementingTicket = "AAASM-5529"
+)
 
-// controlFiles are the test files a binding may name.
-//
-// More than one, because the quick-start's claims are not all proved in the
-// same place: the deny claims are proved by the negative controls, while the
-// "discards that record" claim is proved by the audit-sink suite, which drives
-// the SHIPPED client. Binding that claim to a negative control was a defect —
-// those controls use a fixture client that retains the record, so the control
-// stayed green when the shipped client's disposition flipped.
+// controlFiles are the test files a binding may name a control from.
 var controlFiles = []string{
 	"quickstart_negative_control_test.go",
 	"audit_sink_test.go",
 }
 
-// enforcementVocabulary marks a sentence as making a claim about what
-// governance does. Deliberately wide: a narrow vocabulary is itself a bypass,
-// because a new enforcement paragraph phrased around it is not treated as a
-// claim at all.
+// enforcementVocabulary gates NOTHING. It is a severity hint in the failure
+// message, and the trigger for the stricter allow-list rule. See the header for
+// why gating on a keyword list is unsound.
 var enforcementVocabulary = regexp.MustCompile(
 	`(?i)\bdenie[sd]\b|\bdeny\b|\bblocked\b|\bblocking\b|\bnever runs?\b` +
 		`|\bbefore execution\b|\bchecked against\b|\benforces?\b|\benforced\b` +
 		`|\bpassthrough\b|\bdiscards?\b|\bdiscarded\b|\bthrows?\b|\brejects?\b` +
-		`|\brouted\b|\bintercepts?\b|\binterception\b|\bgoverned\b|\bverified\b` +
-		`|\bprotection\b|\bunprotected\b|\bbypass(ed|es)?\b`,
+		`|\brouted\b|\bintercepts?\b|\binterception\b|\bgovern(s|ed|ance)?\b` +
+		`|\bverified\b|\bprotection\b|\bunprotected\b|\bbypass(ed|es)?\b`,
 )
 
-// excludedSections are whole sections skipped by the scan, each with a reason.
-var excludedSections = map[string]string{
-	"## Where to next": "A link list. Every line is a cross-reference; the claims live on the " +
-		"pages linked to and are gated there.",
-}
-
-// excludedSentences are individual sentences skipped by the scan, each with a
-// reason. Exact flattened sentences, never patterns, so an entry cannot
-// silently cover a reworded or newly added claim — changing the sentence makes
-// the entry stale and the allow-list test fails.
-var excludedSentences = map[string]string{
-	"Hand `governed` to your agent in place of the originals.": "Names the sample's variable. It " +
-		"makes no capability claim; it matches the vocabulary only because the variable is called " +
-		"`governed`.",
-	"Two more validated Go examples already exist — **Tool Policy** and **CLI Runtime (sidecar)** — " +
-		"but those are patterns (an allow/deny policy demo and sidecar wiring), not \"first agent\" " +
-		"frameworks, so they're intentionally left out of this quick-start; see " +
-		"`metadata/quickstart/README.md` for the tab-selection rationale.": "Editorial note about which " +
-		"example tabs the page shows. It makes no claim about what governance does.",
-}
+// Allow-list categories. Permitted only for a sentence that does NOT match the
+// vocabulary; anything that does needs a written reason.
+const (
+	notAClaim  = "Descriptive or instructional prose. Says nothing about what governance does to a tool call."
+	navigation = "A cross-reference. The claim, if any, lives on the page linked to and is gated there."
+)
 
 // claimBinding is one documented claim and the controls that stand behind it.
 type claimBinding struct {
@@ -113,7 +100,8 @@ type claimBinding struct {
 	quote string
 	// controls are "<file> :: TestName/Subtest" ids drawn from controlFiles.
 	controls []string
-	// unprovenReason is set when no control proves the claim. Must name a ticket.
+	// unprovenReason is set when no control proves the claim. Must name a
+	// ticket, and must not name implementingTicket.
 	unprovenReason string
 }
 
@@ -135,11 +123,7 @@ var quickStartClaimBindings = []claimBinding{
 	},
 	{
 		id: "wraptools-governs-every-call",
-		// Ends with a colon, not a period: the sentence introduces the fenced
-		// sample that follows it. Before fenced blocks became paragraph breaks
-		// this ran on into "The second argument is the `GovernanceClient`…",
-		// and a binding quoting the glued pair would have covered two claims at
-		// once — fragment containment one level up.
+		// Ends with a colon: it introduces the fenced sample that follows.
 		quote: "`WrapTools` takes your `[]Tool` and a governance client, and returns a new `[]Tool` " +
 			"where every `Call` is governed:",
 		controls: []string{
@@ -154,8 +138,6 @@ var quickStartClaimBindings = []claimBinding{
 			"`Check`/`RecordResult` calls) while you wire in a real client, ready to enforce policy " +
 			"(see [Handle allow/deny decisions and errors]({{< relref " +
 			"\"/guides/handle-decisions-and-errors\" >}})).",
-		// Both halves. The opt-out needs its own control: without it, the deny
-		// is indistinguishable from "the wrapper never runs anything".
 		controls: []string{
 			negControl + "TestQuickStartDegradedPathCannotLookProtected/NilClientUnderTheDefaultPostureDeniesRatherThanRunning",
 			negControl + "TestQuickStartDegradedPathCannotLookProtected/NilClientWithFailOpenRunsTheToolAndSaysSo",
@@ -168,20 +150,30 @@ var quickStartClaimBindings = []claimBinding{
 			"this SDK ships discards that record rather than retaining it, so the SDK layer keeps no " +
 			"audit trail of its own (see the warning on the [documentation home]({{< relref \"/\" >}}), " +
 			"AAASM-5731).",
-		// This sentence makes two claims, so it names controls for both.
-		//
-		// The "discards that record" half is bound to the audit-sink suite,
-		// which drives the SHIPPED client end to end. It was previously bound to
-		// a negative control, which was wrong in a way that matters: those
-		// controls hand the record to a FIXTURE client that retains it, so
-		// flipping the shipped client's disposition left them green. The control
-		// named here is the one that goes red when the claim becomes false.
+		// Two claims in one sentence, so controls for both. The "discards" half
+		// is bound to the audit-sink suite, which drives the SHIPPED client; it
+		// was previously bound to a negative control whose fixture client
+		// RETAINS the record, so that control stayed green when the claim
+		// became false.
 		controls: []string{
 			negControl + "TestQuickStartFilesystemNegativeControl/PositiveControl_AllowedWriteCreatesTheFile",
 			negControl + "TestQuickStartFilesystemNegativeControl/NegativeControl_DeniedWriteLeavesNoFile",
 			auditControl + "TestShippedClientDeclaringNoRetentionReachesNothing",
 			auditControl + "TestEveryShippedGovernanceClientDeclaresItsAuditSink",
 		},
+	},
+	{
+		id: "init-succeeds-once-a-gateway-is-reachable",
+		// RESTORED. Revision 2 dropped this binding when the scan narrowed, so
+		// coverage went DOWN between rounds and the only in-code pointer to
+		// AAASM-5662 went with it — while the sentence stayed published and
+		// stayed false. Inverting the default makes that class of regression
+		// impossible: the sentence is scanned whether or not anyone remembers it.
+		quote: "**`Init` succeeds** once a gateway is reachable (resolved or auto-started).",
+		unprovenReason: "AAASM-5662: the documented \"Putting it together\" program was executed and " +
+			"exits 1 — Init fails before any tool call, because WrapTools is reached with no " +
+			"governance available. No control covers the documented program, and binding one of " +
+			"the WrapTools controls here would misrepresent what was measured.",
 	},
 	{
 		id: "deny-surfaces-as-policy-violation-and-tool-never-runs",
@@ -195,55 +187,164 @@ var quickStartClaimBindings = []claimBinding{
 	},
 }
 
-// yamlFrontMatter matches the Hugo front matter at the top of the document.
-// Without stripping it, "title: Quick Start weight: 1" flattens into the first
-// sentence and the binding for that sentence has to quote metadata.
-var yamlFrontMatter = regexp.MustCompile(`(?s)\A---\n.*?\n---\n`)
+// allowedSentences are every sentence that makes no capability claim, keyed
+// exactly. A category is permitted only where the sentence does not match
+// enforcementVocabulary; anything that does carries a written justification.
+var allowedSentences = map[string]string{
+	"The whole thing is a single `main` you can copy, paste, and run.": notAClaim,
+	"The default pure-Go build has no native transport, so it does not register even when [`WithSidecarAddress`](https://pkg.go.dev/github.com/ai-agent-assembly/go-sdk/assembly#WithSidecarAddress) is set (see that option's godoc).":                                          notAClaim,
+	"Publishing the native library — or dropping the cgo requirement — is a separate product decision; track status in [AAASM-4547](https://lightning-dust-mite.atlassian.net/browse/AAASM-4547) and [AAASM-4469](https://lightning-dust-mite.atlassian.net/browse/AAASM-4469).": notAClaim,
+	"{{< /callout >}}": notAClaim,
+	"**Go** ≥ 1.26 (the floor declared in `go.mod`).": notAClaim,
+	"For **local development**: nothing else — `Init` auto-discovers a gateway on `http://localhost:7391`, and starts one for you if none is running (the [`aasm` CLI](https://github.com/ai-agent-assembly/agent-assembly) must be on your `PATH`).": notAClaim,
+	"{{< callout type=\"note\" >}} **Local-mode transports — `:7391` REST + `:50051` gRPC.** `Init` shells out to the following command to auto-start the gateway:":                                                                                   notAClaim,
+	"The `:7391` auto-discovery above only resolves the REST gateway URL.": notAClaim,
+	"Agent **registration** is a separate concern that talks to the gateway's gRPC endpoint (default `127.0.0.1:50051`) — `Init` does **not** auto-derive this address the way the Python and Node SDKs do.":                            notAClaim,
+	"Reaching it requires an explicit [`WithSidecarAddress`](https://pkg.go.dev/github.com/ai-agent-assembly/go-sdk/assembly#WithSidecarAddress) (or `WithSidecarBinary`) option; without one, `Init` returns `ErrSidecarUnavailable`.": notAClaim,
+	"And per the warning at the top of this page, the registration handshake itself only runs under the opt-in native cgo binding today.":                                                                                               notAClaim,
+	"To confirm both surfaces are actually up rather than guessing from `Init`'s behavior, check them directly:":                                                                                                                        notAClaim,
+	"For **production**: a gateway URL and, if your gateway requires auth, an API key.":                                                                                                                                                 notAClaim,
+	"Both can come from options, environment variables, or a config file — see [Configuration]({{< relref \"/configuration\" >}}).":                                                                                                     notAClaim,
+	"*(Optional)* a C compiler, only if you opt into the native FFI transport with `-tags aa_ffi_go`.":                                                                                                                                  notAClaim,
+	"The default transport is pure-Go and needs none.":                                            notAClaim,
+	"`Init` returns an `*assembly.Assembly` — your runtime handle.":                               notAClaim,
+	"Always `Close` it when you're done so the connection (and any managed sidecar) is released.": notAClaim,
+	"For **local development** you can drop both options entirely — `assembly.Init(ctx)` resolves the gateway from the environment, then `~/.aasm/config.yaml`, then the local default.": notAClaim,
+	"See [Configuration]({{< relref \"/configuration#gateway-and-credential-resolution\" >}}) for the full resolution order.":                                                            navigation,
+	"Your tools just need to satisfy the SDK's small `Tool` interface:":                                                                                                                  notAClaim,
+	"The second argument is the `GovernanceClient` that talks to the gateway.":                                                                                                           notAClaim,
+	"Go's per-framework surface is thin today, so the tabs are **LangChainGo** (the framework path) and **Plain** (the framework-agnostic path).":                                        notAClaim,
+	"A new tab appears automatically once a new Go **framework** example lands.":                                                                                                         notAClaim,
+	"{{< tabs >}} {{< tab name=\"LangChainGo\" >}}":                                                                                                                                      notAClaim,
+	"_Governance slice from the runnable `go/langchaingo/main.go` example._":                                                                                                             notAClaim,
+	"{{< /tab >}} {{< tab name=\"Plain\" >}}":                                                                                                                                            notAClaim,
+	"_Governance slice from the runnable `go/basic-agent/main.go` example._":                                                                                                             notAClaim,
+	"{{< /tab >}} {{< /tabs >}}": notAClaim,
+	"If no gateway can be found and no `aasm` binary is on `PATH`, you'll get a typed `*assembly.ConfigurationError` — see [Troubleshooting]({{< relref \"/troubleshooting\" >}}).": notAClaim,
+	"**Tool calls run** and return the inner tool's result.":                                                     notAClaim,
+	"[Core Concepts]({{< relref \"/core-concepts\" >}}) — what's actually happening inside the SDK.":             navigation,
+	"**[Examples]({{< relref \"/examples\" >}})** — wire the SDK into the framework you actually use.":           navigation,
+	"[Guides]({{< relref \"/guides\" >}}) — wrap a real agent, integrate a framework, handle decisions.":         navigation,
+	"[Configuration]({{< relref \"/configuration\" >}}) — every `Init` option, defaults, and enforcement modes.": navigation,
+	"[Troubleshooting]({{< relref \"/troubleshooting\" >}}) — what to do when `Init` or a check fails.":          navigation,
 
-// fencedCodeBlock matches ```...``` spans.
-var fencedCodeBlock = regexp.MustCompile("(?s)```.*?```")
+	// --- sentences matching the vocabulary: written justification required ---
+
+	"{{< callout type=\"warning\" >}} **Agent registration is not reachable from a plain `go get` " +
+		"today — following this quick-start will not make your agent appear in the dashboard.** The " +
+		"steps below wrap and govern tool calls, but the register handshake runs *only* under the " +
+		"opt-in native cgo binding (`-tags aa_ffi_go`, `CGO_ENABLED=1`), and that native library " +
+		"(`libaa_ffi_go`) is **not published anywhere** yet: building with `-tags aa_ffi_go` fails " +
+		"with `ld: library 'aa_ffi_go' not found` outside a full monorepo checkout.": "A LIMITATION " +
+		"disclaimer, not a capability claim — it says what the product does NOT do, which is the " +
+		"opposite of the over-claiming this gate exists to catch. Independently corroborated while " +
+		"scoping AAASM-5529: native/aa-ffi-go/Cargo.toml sets publish = false and no release " +
+		"workflow ships the library. Kept as an exact sentence so that if it ever becomes false, " +
+		"editing it forces a revisit here. NOTE: no Jira ticket currently owns closing this gap.",
+
+	"Hand `governed` to your agent in place of the originals.": "Names the sample's variable. It " +
+		"matches the vocabulary only because the variable is called `governed`; it asserts nothing " +
+		"about what happens to a call made through it.",
+
+	"Pick your framework — each tab shows the governance slice copied verbatim from a runnable " +
+		"example in the [examples repo](https://github.com/ai-agent-assembly/examples/tree/HEAD/go) " +
+		"(a CI drift check keeps them in lockstep).": "Describes where the tab content comes from. " +
+		"'governance slice' names the excerpt's provenance, not an enforcement outcome.",
+
+	"Two more validated Go examples already exist — **Tool Policy** and **CLI Runtime (sidecar)** " +
+		"— but those are patterns (an allow/deny policy demo and sidecar wiring), not \"first agent\" " +
+		"frameworks, so they're intentionally left out of this quick-start; see " +
+		"`metadata/quickstart/README.md` for the tab-selection rationale.": "An editorial note about " +
+		"which example tabs the page shows. It matches the vocabulary through the phrase " +
+		"'allow/deny policy demo', which names an example, not a guarantee.",
+}
+
+var (
+	yamlFrontMatter = regexp.MustCompile(`(?s)\A---\n.*?\n---\n`)
+	fencedCodeBlock = regexp.MustCompile("(?s)```.*?```")
+	// A reader cannot see a comment, so a bound claim commented out of the
+	// rendered page must not still satisfy this gate. CommonMark HTML blocks
+	// (type 2) span blank lines, so this is applied to the whole document
+	// before paragraph splitting, not per paragraph.
+	htmlComment = regexp.MustCompile(`(?s)<!--.*?-->`)
+	mdxComment  = regexp.MustCompile(`(?s)\{/\*.*?\*/\}`)
+	listMarker  = regexp.MustCompile(`(?m)^\s*(?:[-*+]|\d+\.)\s+`)
+	// Go's RE2 has no lookahead, so units are split by scanning lines rather
+	// than with a zero-width pattern. A line that opens a list item or a table
+	// row starts a new unit, so two adjacent bullets never merge into one
+	// "sentence" that a single binding could then cover.
+	unitOpener  = regexp.MustCompile(`^\s*(?:[-*+]|\d+\.)\s|^\|`)
+	headingLine = regexp.MustCompile(`(?m)^#{1,6} .*$`)
+	// '.' and '?' only. '!' is not a terminator: Hugo/mkdocs callouts and
+	// emphatic prose would otherwise split into fragments.
+	sentenceEnd = regexp.MustCompile(`(?s)[.?]\s`)
+	ticketRef   = regexp.MustCompile(`AAASM-\d+`)
+)
 
 func flattenMarkdown(text string) string {
 	return strings.Join(strings.Fields(text), " ")
 }
 
-// scannedSentences returns flattened sentence -> section heading for the whole
-// document, minus the excluded sections.
-//
-// The gate opts sections OUT by name rather than opting them in, so a claim
-// added to a section nobody thought about is still caught.
-func scannedSentences(t *testing.T) map[string]string {
+func readDocument(t *testing.T) string {
 	t.Helper()
-
 	raw, err := os.ReadFile(quickStartDoc)
 	if err != nil {
 		t.Fatalf("cannot read %s: %v", quickStartDoc, err)
 	}
-	// Normalise line endings before anything else. Without this the paragraph
-	// split never fires on a CRLF checkout: the whole section collapses into one
-	// "sentence" that matches no binding. Node's four Windows CI legs caught
-	// exactly that while Linux and macOS stayed green. This repo's CI is
-	// Linux/macOS only, so the bug is latent here — normalised anyway, because a
-	// gate whose result depends on the checkout's line endings is not a gate.
-	body := strings.ReplaceAll(string(raw), "\r\n", "\n")
+	// Normalise line endings first: on a CRLF checkout the paragraph split
+	// never fires and the whole section collapses into one sentence.
+	return strings.ReplaceAll(string(raw), "\r\n", "\n")
+}
+
+// splitUnits breaks a paragraph at each list item or table row.
+func splitUnits(paragraph string) []string {
+	var units []string
+	var current []string
+	for _, line := range strings.Split(paragraph, "\n") {
+		if unitOpener.MatchString(line) && len(current) > 0 {
+			units = append(units, strings.Join(current, "\n"))
+			current = current[:0]
+		}
+		current = append(current, line)
+	}
+	if len(current) > 0 {
+		units = append(units, strings.Join(current, "\n"))
+	}
+	return units
+}
+
+func splitSentences(paragraph string) []string {
+	locs := sentenceEnd.FindAllStringIndex(paragraph, -1)
+	out := make([]string, 0, len(locs)+1)
+	start := 0
+	for _, loc := range locs {
+		// Keep the terminator with the sentence it ends.
+		out = append(out, paragraph[start:loc[0]+1])
+		start = loc[1]
+	}
+	return append(out, paragraph[start:])
+}
+
+// scannedSentences returns flattened sentence -> section heading for the WHOLE
+// document. No section is skipped.
+func scannedSentences(t *testing.T) map[string]string {
+	t.Helper()
+
+	body := readDocument(t)
 	body = yamlFrontMatter.ReplaceAllString(body, "")
-	// A fenced block becomes a PARAGRAPH break, not a space. Replacing it with a
-	// space glued the sentence before a code sample to the sentence after it,
-	// and a binding quoting the glued pair would then cover two claims at once —
-	// the same defect as fragment containment, one level up.
-	body = fencedCodeBlock.ReplaceAllString(body, "\n\n")
+	for _, pattern := range []*regexp.Regexp{fencedCodeBlock, htmlComment, mdxComment} {
+		body = pattern.ReplaceAllString(body, "\n\n")
+	}
 
 	sentences := make(map[string]string)
 	section := "(preamble)"
-	headingLine := regexp.MustCompile(`(?m)^#{2,6} .*$`)
-
 	offset := 0
-	for _, loc := range append(headingLine.FindAllStringIndex(body, -1), []int{len(body), len(body)}) {
-		chunk := body[offset:loc[0]]
-		if _, skipped := excludedSections[section]; !skipped {
-			for _, paragraph := range strings.Split(chunk, "\n\n") {
-				for _, sentence := range splitSentences(paragraph) {
-					if flat := flattenMarkdown(sentence); flat != "" {
+	bounds := append(headingLine.FindAllStringIndex(body, -1), []int{len(body), len(body)})
+	for _, loc := range bounds {
+		for _, paragraph := range strings.Split(body[offset:loc[0]], "\n\n") {
+			for _, unit := range splitUnits(paragraph) {
+				for _, raw := range splitSentences(listMarker.ReplaceAllString(unit, "")) {
+					if flat := flattenMarkdown(raw); flat != "" {
 						sentences[flat] = section
 					}
 				}
@@ -255,38 +356,6 @@ func scannedSentences(t *testing.T) map[string]string {
 		offset = loc[1]
 	}
 	return sentences
-}
-
-// sentenceEnd splits on a period followed by whitespace.
-var sentenceEnd = regexp.MustCompile(`(?s)\.\s`)
-
-func splitSentences(paragraph string) []string {
-	parts := sentenceEnd.Split(paragraph, -1)
-	out := make([]string, 0, len(parts))
-	for i, part := range parts {
-		// Split consumed the terminator; put it back so a quote is a real sentence.
-		if i < len(parts)-1 {
-			part += "."
-		}
-		out = append(out, part)
-	}
-	return out
-}
-
-// claimSentences are the scanned sentences that make an enforcement claim.
-func claimSentences(t *testing.T) map[string]string {
-	t.Helper()
-	claims := make(map[string]string)
-	for sentence, section := range scannedSentences(t) {
-		if !enforcementVocabulary.MatchString(sentence) {
-			continue
-		}
-		if _, excluded := excludedSentences[sentence]; excluded {
-			continue
-		}
-		claims[sentence] = section
-	}
-	return claims
 }
 
 // controlNodeIDs extracts "<file> :: TestName/Subtest" ids from every control
@@ -332,15 +401,11 @@ func controlNodeIDs(t *testing.T) map[string]bool {
 	return ids
 }
 
-// sentinelNamesByMessage AST-parses governance_errors.go and returns
-// message -> exported identifier for every `var ErrX = errors.New("...")`.
-//
-// This is what makes the sentinel check real. A rename tool renames the
-// identifier but not a string literal in a test, so a check that hard-codes the
-// name in a strings.Contains against the document passes while the SDK exports
-// one name and the docs tell readers to match another. Deriving the name from
-// source and looking it up by the message the running SDK actually returns
-// closes that.
+// sentinelNamesByMessage AST-parses governance_errors.go for
+// `var Err… = errors.New("…")` pairs, so the sentinel's NAME is derived rather
+// than transcribed. A rename tool renames the identifier but not a string
+// literal, so a hard-coded name in a Contains check against the document passes
+// while the SDK exports one name and the docs name another.
 func sentinelNamesByMessage(t *testing.T) map[string]string {
 	t.Helper()
 
@@ -378,129 +443,104 @@ func sentinelNamesByMessage(t *testing.T) map[string]string {
 	return byMessage
 }
 
-func readDocument(t *testing.T) string {
-	t.Helper()
-	raw, err := os.ReadFile(quickStartDoc)
-	if err != nil {
-		t.Fatalf("cannot read %s: %v", quickStartDoc, err)
-	}
-	return strings.ReplaceAll(string(raw), "\r\n", "\n")
-}
-
 // TestClaimGateCanSeeWhatItGates is the positive control for the gate itself.
-// An empty parse and a clean result are otherwise indistinguishable.
+// An empty parse and a clean result look identical.
 func TestClaimGateCanSeeWhatItGates(t *testing.T) {
-	t.Run("TheWholeDocumentIsReadAndSplitIntoSentences", func(t *testing.T) {
-		sentences := scannedSentences(t)
-		if len(sentences) < 30 {
-			t.Fatalf("only %d sentences parsed from the whole quick-start", len(sentences))
+	t.Run("TheWholeDocumentIsReadAndSplit", func(t *testing.T) {
+		if n := len(scannedSentences(t)); n < 30 {
+			t.Fatalf("only %d sentences parsed from the whole quick-start", n)
 		}
 	})
 
-	t.Run("TheScanFindsEnforcementClaims", func(t *testing.T) {
-		claims := claimSentences(t)
-		if len(claims) < 5 {
-			t.Fatalf("only %d claim sentences found: %v", len(claims), claims)
-		}
-	})
-
-	t.Run("TheScanReachesMoreThanOneSection", func(t *testing.T) {
-		// Narrowing the scan back to one region would otherwise look identical
-		// to a clean pass.
+	t.Run("TheScanReachesEverySectionIncludingTheLast", func(t *testing.T) {
 		sections := make(map[string]bool)
-		for _, section := range claimSentences(t) {
+		for _, section := range scannedSentences(t) {
 			sections[section] = true
 		}
-		if len(sections) < 3 {
-			t.Fatalf("claims were found in only these sections: %v", sections)
+		if len(sections) < 5 {
+			t.Fatalf("the scan reached only %d sections: %v", len(sections), sections)
+		}
+		// "## Where to next" used to be excluded by name, which made it a black
+		// hole: a claim inserted there was never seen.
+		if !sections["## Where to next"] {
+			t.Fatalf("'## Where to next' is not in the scan; it must be. Sections seen: %v", sections)
+		}
+	})
+
+	t.Run("CommentsAreStrippedBeforeScanning", func(t *testing.T) {
+		document := readDocument(t)
+		if !strings.Contains(document, "<!--") {
+			t.Skip("the quick-start no longer contains an HTML comment; nothing to prove here")
+		}
+		for sentence := range scannedSentences(t) {
+			if strings.Contains(sentence, "<!--") || strings.Contains(sentence, "-->") {
+				t.Fatalf("HTML comment markup leaked into the scan: %q", sentence)
+			}
 		}
 	})
 
 	t.Run("TheASTExtractionFindsControlsInEveryControlFile", func(t *testing.T) {
 		ids := controlNodeIDs(t)
 		for _, file := range controlFiles {
-			found := 0
+			found := false
 			for id := range ids {
 				if strings.HasPrefix(id, file+" :: ") {
-					found++
+					found = true
+					break
 				}
 			}
-			if found == 0 {
+			if !found {
 				t.Fatalf("AST extraction found no controls in %s", file)
 			}
-		}
-		const known = negControl + "TestQuickStartFilesystemNegativeControl/NegativeControl_DeniedWriteLeavesNoFile"
-		if !ids[known] {
-			t.Fatalf("AST extraction did not find %q", known)
 		}
 	})
 
 	t.Run("TheSentinelExtractionFindsExportedErrorVars", func(t *testing.T) {
-		byMessage := sentinelNamesByMessage(t)
-		if len(byMessage) < 2 {
-			t.Fatalf("AST extraction found %d sentinel vars in %s: %v",
-				len(byMessage), governanceErrorsFile, byMessage)
+		if n := len(sentinelNamesByMessage(t)); n < 2 {
+			t.Fatalf("AST extraction found %d sentinel vars in %s", n, governanceErrorsFile)
 		}
 	})
 }
 
-// TestTheAllowListCannotBecomeABypass keeps the two exclusion lists from
-// becoming the new hole.
-func TestTheAllowListCannotBecomeABypass(t *testing.T) {
-	t.Run("EveryExcludedSectionIsStillARealHeading", func(t *testing.T) {
-		document := readDocument(t)
-		for heading, reason := range excludedSections {
-			if !strings.Contains(document, heading) {
-				t.Errorf("excludedSections names %q, which is no longer a heading in %s. "+
-					"A stale exclusion silently widens over time — remove it.", heading, quickStartDoc)
-			}
-			if strings.TrimSpace(reason) == "" {
-				t.Errorf("exclusion %q carries no reason", heading)
-			}
-		}
-	})
-
-	t.Run("EveryExcludedSentenceIsStillPresentVerbatim", func(t *testing.T) {
-		// An entry is a whole sentence, so rewording the claim makes the entry
-		// stale and fails here rather than silently exempting the new wording.
-		scanned := scannedSentences(t)
-		for sentence, reason := range excludedSentences {
-			if _, present := scanned[sentence]; !present {
-				t.Errorf("excludedSentences contains a sentence that no longer appears in %s:\n  %q\n"+
-					"It was reworded or removed. Delete the stale entry, and if the replacement makes "+
-					"an enforcement claim, bind it.", quickStartDoc, sentence)
-			}
-			if strings.TrimSpace(reason) == "" {
-				t.Errorf("exclusion of %q carries no reason", sentence)
-			}
-		}
-	})
-}
-
-// TestEveryDocumentedClaimIsBound is what makes this gate load-bearing rather
-// than decorative.
-func TestEveryDocumentedClaimIsBound(t *testing.T) {
-	t.Run("NoEnforcementSentenceIsUnbound", func(t *testing.T) {
+// TestEverySentenceIsAccountedFor is the inversion: bound, or allow-listed, or
+// the gate fails. There is no third state and no keyword filter.
+func TestEverySentenceIsAccountedFor(t *testing.T) {
+	t.Run("NoSentenceIsUnboundAndUnallowed", func(t *testing.T) {
 		quotes := make(map[string]bool, len(quickStartClaimBindings))
 		for _, binding := range quickStartClaimBindings {
 			quotes[binding.quote] = true
 		}
-		for sentence, section := range claimSentences(t) {
+		for sentence, section := range scannedSentences(t) {
 			if quotes[sentence] {
 				continue
 			}
-			t.Errorf("this sentence in section %q makes an enforcement claim and has no claimBinding:\n  %q\n\n"+
-				"Add a claimBinding whose quote is the WHOLE sentence, naming the control that proves it. "+
-				"If no control does, set unprovenReason and name the ticket. If the sentence genuinely "+
-				"makes no capability claim, add it to excludedSentences with a reason — do not delete the "+
-				"claim from this gate to make it pass.", section, sentence)
+			if _, allowed := allowedSentences[sentence]; allowed {
+				continue
+			}
+			severity := "prose"
+			if enforcementVocabulary.MatchString(sentence) {
+				severity = "CLAIM-LIKE"
+			}
+			t.Errorf("[%s] this sentence in section %q is neither bound nor allow-listed:\n  %q\n\n"+
+				"CLAIM-LIKE marks a vocabulary match — a severity hint only. A sentence marked "+
+				"'prose' can still be a claim, which is exactly why this gate does not filter on "+
+				"the vocabulary.\n"+
+				"Add a claimBinding whose quote is the WHOLE sentence and which names the control "+
+				"that proves it (or an unprovenReason naming a ticket), or add it to "+
+				"allowedSentences with a category. A vocabulary match needs a written "+
+				"justification there, not a category.", severity, section, sentence)
+		}
+	})
+
+	t.Run("NothingIsBothBoundAndAllowed", func(t *testing.T) {
+		for _, binding := range quickStartClaimBindings {
+			if _, allowed := allowedSentences[binding.quote]; allowed {
+				t.Errorf("claim %q is both bound and allow-listed", binding.id)
+			}
 		}
 	})
 
 	t.Run("EachBindingMatchesExactlyOneWholeSentence", func(t *testing.T) {
-		// Whole-sentence equality, not containment. Containment allowed a
-		// sentence to carry extra unbound claims — up to and including its own
-		// negation — while one bound fragment kept the gate green.
 		scanned := scannedSentences(t)
 		for _, binding := range quickStartClaimBindings {
 			matches := 0
@@ -512,8 +552,7 @@ func TestEveryDocumentedClaimIsBound(t *testing.T) {
 			if matches != 1 {
 				t.Errorf("claim binding %q must match exactly one whole sentence in %s; it matched %d.\n"+
 					"Its quote is:\n  %q\n"+
-					"The claim was reworded, split, or merged. Update the quote to the new whole sentence "+
-					"and re-check that the named controls still prove it.",
+					"The claim was reworded, split, merged, or commented out.",
 					binding.id, quickStartDoc, matches, binding.quote)
 			}
 		}
@@ -522,26 +561,62 @@ func TestEveryDocumentedClaimIsBound(t *testing.T) {
 	t.Run("NoTwoBindingsClaimTheSameSentence", func(t *testing.T) {
 		seen := make(map[string]string)
 		for _, binding := range quickStartClaimBindings {
-			if other, duplicate := seen[binding.quote]; duplicate {
-				t.Errorf("claim bindings %q and %q quote the same sentence. Split responsibility "+
-					"like that and neither binding owns the claim.", other, binding.id)
+			if other, dup := seen[binding.quote]; dup {
+				t.Errorf("claim bindings %q and %q quote the same sentence", other, binding.id)
 			}
 			seen[binding.quote] = binding.id
 		}
 	})
 }
 
+// TestTheAllowListCannotBecomeABypass keeps the exclusion list from becoming
+// the new hole.
+func TestTheAllowListCannotBecomeABypass(t *testing.T) {
+	t.Run("EveryAllowedSentenceIsStillPresentVerbatim", func(t *testing.T) {
+		scanned := scannedSentences(t)
+		for sentence := range allowedSentences {
+			if _, present := scanned[sentence]; !present {
+				t.Errorf("allowedSentences contains a sentence that no longer appears in %s:\n  %q\n"+
+					"It was reworded or removed. Delete the stale entry, and if the replacement makes "+
+					"a capability claim, bind it.", quickStartDoc, sentence)
+			}
+		}
+	})
+
+	t.Run("AClaimLikeSentenceNeedsAWrittenJustification", func(t *testing.T) {
+		// Waving through a sentence that reads like a claim must cost a
+		// sentence of prose. The categories are deliberately unusable here.
+		for sentence, reason := range allowedSentences {
+			if !enforcementVocabulary.MatchString(sentence) {
+				continue
+			}
+			if reason == notAClaim || reason == navigation {
+				t.Errorf("this allow-listed sentence matches the enforcement vocabulary but is waved "+
+					"through with a bare category:\n  %q\n"+
+					"Replace the category with a written justification saying why it makes no "+
+					"capability claim, or bind it.", sentence)
+			}
+		}
+	})
+
+	t.Run("EveryAllowListReasonIsNonEmpty", func(t *testing.T) {
+		for sentence, reason := range allowedSentences {
+			if strings.TrimSpace(reason) == "" {
+				t.Errorf("allow-list entry has no reason: %q", sentence)
+			}
+		}
+	})
+}
+
 // TestEveryBindingNamesSomethingReal fails when a control a binding depends on
-// is renamed or removed.
+// is renamed or removed, or when an unproven claim is untraceable.
 func TestEveryBindingNamesSomethingReal(t *testing.T) {
 	t.Run("NamedControlsExist", func(t *testing.T) {
 		available := controlNodeIDs(t)
 		for _, binding := range quickStartClaimBindings {
 			for _, control := range binding.controls {
 				if !available[control] {
-					t.Errorf("claim binding %q names a control that does not exist:\n  %s\n\n"+
-						"The control was renamed or removed. Re-point the binding at the control that "+
-						"now proves the claim, or mark the claim unproven and name the ticket.",
+					t.Errorf("claim binding %q names a control that does not exist:\n  %s",
 						binding.id, control)
 				}
 			}
@@ -549,23 +624,31 @@ func TestEveryBindingNamesSomethingReal(t *testing.T) {
 	})
 
 	t.Run("AClaimIsEitherProvenOrOpenlyUnproven", func(t *testing.T) {
-		// Every claim, with no exempt category. There used to be a `kind` field
-		// here that was written and never read — dead decoration a reader would
-		// assume was enforced. It was removed rather than wired up.
-		ticketPattern := regexp.MustCompile(`AAASM-\d+`)
 		for _, binding := range quickStartClaimBindings {
 			if len(binding.controls) > 0 {
 				continue
 			}
 			if binding.unprovenReason == "" {
-				t.Errorf("claim %q names no control and gives no unprovenReason. One or the other is "+
-					"required: a documented claim with neither is exactly the unbacked assertion "+
-					"AAASM-5526 exists to eliminate.", binding.id)
+				t.Errorf("claim %q names no control and gives no unprovenReason", binding.id)
 				continue
 			}
-			if !ticketPattern.MatchString(binding.unprovenReason) {
-				t.Errorf("claim %q is unproven but its reason names no ticket. Reason given: %q",
+			if !ticketRef.MatchString(binding.unprovenReason) {
+				t.Errorf("claim %q is unproven but names no ticket. Reason: %q",
 					binding.id, binding.unprovenReason)
+			}
+		}
+	})
+
+	t.Run("AnUnprovenReasonDoesNotNameTheImplementingTicket", func(t *testing.T) {
+		// A reason naming this file's own ticket resolves to a CLOSED issue the
+		// moment this work merges, and nothing would notice: the ticket-shaped
+		// check above is satisfied by any AAASM-nnnn, open or not.
+		for _, binding := range quickStartClaimBindings {
+			if strings.Contains(binding.unprovenReason, implementingTicket) {
+				t.Errorf("claim %q is registered unproven against %s, the ticket this file "+
+					"implements. On merge that pointer resolves to a closed issue and the claim is "+
+					"silently orphaned. Name the ticket that will actually resolve it, or file one.",
+					binding.id, implementingTicket)
 			}
 		}
 	})
@@ -573,11 +656,9 @@ func TestEveryBindingNamesSomethingReal(t *testing.T) {
 
 // TestTheDocumentedErrorTypeIsTheOneTheSDKReturns drives a real deny through the
 // exported WrapTools API and reads the concrete type name off the returned
-// error with reflection.
-//
-// The type is deliberately NOT named in this file. Naming it would make a rename
-// a compile error — red, but it aborts the package before this assertion can
-// run, leaving the check that is supposed to catch the rename unexercised.
+// error with reflection. The type is deliberately NOT named here: naming it
+// would make a rename a compile error, which aborts the package before this
+// assertion can run.
 func TestTheDocumentedErrorTypeIsTheOneTheSDKReturns(t *testing.T) {
 	tool := newFileSideEffectTool(t)
 	client := newPolicyGovernanceClient(map[string]string{"write_to_disk": "policy forbids disk writes"})
@@ -593,44 +674,29 @@ func TestTheDocumentedErrorTypeIsTheOneTheSDKReturns(t *testing.T) {
 	}
 
 	actual := reflect.TypeOf(err).String()
-
 	documented := regexp.MustCompile(`\*assembly\.[A-Za-z0-9_]+Error`).FindAllString(readDocument(t), -1)
 	if len(documented) == 0 {
-		t.Fatalf("%s no longer names any *assembly.<Name>Error type. If that promise was removed, "+
-			"this gate must be re-pointed rather than deleted.", quickStartDoc)
+		t.Fatalf("%s no longer names any *assembly.<Name>Error type", quickStartDoc)
 	}
-
 	for _, name := range documented {
 		if name == actual {
 			return
 		}
 	}
 	t.Errorf("a denied call returns %s, but %s names only %v.\n"+
-		"Either the type was renamed and the documentation now points at something a reader cannot "+
-		"find, or the deny path changed which error it returns.",
+		"Either the type was renamed and the documentation now points at something a reader "+
+		"cannot find, or the deny path changed which error it returns.",
 		actual, filepath.Base(quickStartDoc), documented)
 }
 
 // TestTheDocumentedSentinelIsTheOneTheNilClientReturns pins the sentinel the
-// WrapTools prose tells a reader to match on.
-//
-// The identifier is DERIVED, not transcribed: the nil-client deny is driven for
-// real, its message is looked up against the `var Err… = errors.New("…")` pairs
-// AST-parsed out of governance_errors.go, and the resulting NAME is what the
-// document must contain.
-//
-// The previous version hard-coded "ErrGovernanceUnavailable" in a
-// strings.Contains against the document, which a rename tool leaves untouched
-// while renaming the identifier — so the SDK could export one name and the docs
-// tell readers to match another, with both green. That check was inert; this one
-// is not.
+// prose tells a reader to match on, with the identifier DERIVED from source.
 func TestTheDocumentedSentinelIsTheOneTheNilClientReturns(t *testing.T) {
 	tool := newFileSideEffectTool(t)
 
 	governed := WrapTools([]Tool{tool}, nil)
 	_, err := governed[0].Call(WithAgentID(context.Background(), "claim-binding-agent"), "degraded")
 
-	// Absence of the effect first, as in every control in this package.
 	if tool.occurred() {
 		t.Fatalf("no governance client was available, yet %s was written", tool.path)
 	}
@@ -647,9 +713,9 @@ func TestTheDocumentedSentinelIsTheOneTheNilClientReturns(t *testing.T) {
 		}
 	}
 	if derivedName == "" {
-		t.Fatalf("the nil-client deny returned %q, which matches no `var Err… = errors.New(…)` in %s.\n"+
-			"Either the sentinel moved to another file or its message changed; re-point this check "+
-			"rather than deleting it. Known sentinels: %v", err.Error(), governanceErrorsFile, byMessage)
+		t.Fatalf("the nil-client deny returned %q, which matches no `var Err… = errors.New(…)` in %s. "+
+			"Re-point this check rather than deleting it. Known sentinels: %v",
+			err.Error(), governanceErrorsFile, byMessage)
 	}
 
 	if !strings.Contains(readDocument(t), derivedName) {
