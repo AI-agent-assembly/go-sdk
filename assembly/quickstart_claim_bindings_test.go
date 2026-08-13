@@ -219,7 +219,14 @@ func scannedSentences(t *testing.T) map[string]string {
 	if err != nil {
 		t.Fatalf("cannot read %s: %v", quickStartDoc, err)
 	}
-	body := yamlFrontMatter.ReplaceAllString(string(raw), "")
+	// Normalise line endings before anything else. Without this the paragraph
+	// split never fires on a CRLF checkout: the whole section collapses into one
+	// "sentence" that matches no binding. Node's four Windows CI legs caught
+	// exactly that while Linux and macOS stayed green. This repo's CI is
+	// Linux/macOS only, so the bug is latent here — normalised anyway, because a
+	// gate whose result depends on the checkout's line endings is not a gate.
+	body := strings.ReplaceAll(string(raw), "\r\n", "\n")
+	body = yamlFrontMatter.ReplaceAllString(body, "")
 	// A fenced block becomes a PARAGRAPH break, not a space. Replacing it with a
 	// space glued the sentence before a code sample to the sentence after it,
 	// and a binding quoting the glued pair would then cover two claims at once —
@@ -377,7 +384,7 @@ func readDocument(t *testing.T) string {
 	if err != nil {
 		t.Fatalf("cannot read %s: %v", quickStartDoc, err)
 	}
-	return string(raw)
+	return strings.ReplaceAll(string(raw), "\r\n", "\n")
 }
 
 // TestClaimGateCanSeeWhatItGates is the positive control for the gate itself.
