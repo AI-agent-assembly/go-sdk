@@ -14,10 +14,28 @@
 // **AAASM-5731 may be cited as the ticket that measured the drop, never as the
 // ticket that will fix it.**
 //
-// Deliberately NOT asserted: that every `Planned` in this repository names
-// AAASM-5750. §6 scopes `Planned` to any decided-but-unbuilt capability with
-// any ticket, so an unrelated roadmap row is legitimate and must not fail this
-// gate. The first version of this test made exactly that over-broad assertion.
+// The assertion is two-tier, because one tier alone fails in one direction or
+// the other and review caught both:
+//
+//   - a **guarded** site (one of [expectedSites]) must name AAASM-5750 exactly.
+//     Without this the gate stops asserting the thing the change made true —
+//     repointing a guarded site to any other live ticket passed green, which is
+//     precisely the drift the gate exists to catch.
+//   - **any other** site must merely not name a stale referent. Asserting
+//     AAASM-5750 repo-wide was the first version's defect: §6 scopes `Planned`
+//     to any decided-but-unbuilt capability with any ticket, so an unrelated
+//     roadmap row is legitimate and must not fail this gate.
+//
+// Two limits are disclosed rather than fixed, both measured as currently
+// unreachable:
+//
+//   - the reachability check is per **file**, not per site. A guarded file that
+//     reflowed its real site out of the scan's reach AND gained a second,
+//     correct claim would keep its entry. Requires two coordinated edits; today
+//     no file in this module carries more than one site.
+//   - the gate file is excluded from its own scan, so it is a hiding place for
+//     a stale referent. It is a test file that documents no SDK behaviour, and
+//     the exclusion matches one exact path rather than a prefix.
 package assembly
 
 import (
@@ -27,6 +45,10 @@ import (
 	"strings"
 	"testing"
 )
+
+// capabilityReferent is the ticket that owns building the SDK-side audit sink.
+// Guarded sites must name it exactly.
+const capabilityReferent = "AAASM-5750"
 
 // staleReferents are the tickets that *measured* the absence of an SDK-side
 // audit sink. Backward citations to them are correct and are left alone; what
@@ -92,6 +114,23 @@ func moduleRoot(t *testing.T) string {
 	}
 }
 
+// endsSentence reports whether a comment line closes a sentence. A wrapped
+// sentence (the Python SDK's `… Planned under ADR 0033 §6` / `(AAASM-5750) …`)
+// does not; a complete one does.
+func endsSentence(line string) bool {
+	trimmed := strings.TrimRight(strings.TrimSpace(line), "*/ ")
+	if trimmed == "" {
+		return false
+	}
+
+	switch trimmed[len(trimmed)-1] {
+	case '.', '!', '?':
+		return true
+	}
+
+	return false
+}
+
 type deferralSite struct {
 	path   string
 	line   int
@@ -148,8 +187,14 @@ func findDeferralSites(t *testing.T, root string) []deferralSite {
 				continue
 			}
 
+			// Extend to the next line only when this line carries no ticket of
+			// its own AND does not end a sentence. Without the sentence guard
+			// the window pairs a claim with a ticket belonging to the *next*
+			// sentence — review produced a real case where an inserted line of
+			// forward-looking prose was blamed for a correct backward citation
+			// beneath it. There are 30 such backward citations in this module.
 			window := line
-			if i+1 < len(lines) {
+			if !ticketRefRe.MatchString(line) && !endsSentence(line) && i+1 < len(lines) {
 				window += "\n" + lines[i+1]
 			}
 
@@ -175,11 +220,25 @@ func findDeferralSites(t *testing.T, root string) []deferralSite {
 	return sites
 }
 
-func TestNoForwardClaimDefersToAClosedMeasurementTicket(t *testing.T) {
+func TestForwardClaimsNameTheRightTicket(t *testing.T) {
 	t.Parallel()
 
+	guarded := make(map[string]bool, len(expectedSites))
+	for _, path := range expectedSites {
+		guarded[path] = true
+	}
+
 	for _, site := range findDeferralSites(t, moduleRoot(t)) {
-		if staleReferents[site.ticket] {
+		switch {
+		case guarded[site.path]:
+			if site.ticket != capabilityReferent {
+				t.Errorf("%s:%d is a guarded audit-sink deferral and must name %s, "+
+					"not %s — this is the site the referent change corrected, and "+
+					"letting it drift to any other ticket is what this gate exists "+
+					"to prevent: %s",
+					site.path, site.line, capabilityReferent, site.ticket, site.text)
+			}
+		case staleReferents[site.ticket]:
 			t.Errorf("%s:%d defers to %s, which measured the drop and will not fix "+
 				"it — use the ticket that builds the sink (AAASM-5750, per its own "+
 				"description): %s",
