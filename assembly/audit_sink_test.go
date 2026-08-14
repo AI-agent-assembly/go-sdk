@@ -520,6 +520,88 @@ func TestInitWarnsAboutTheAuditGapOnlyWhenThereIsOne(t *testing.T) {
 	})
 }
 
+// TestARecordDispatchedThenClosedIsDeterministicallyLost measures the shutdown
+// race, because the quick-start documents a caveat and a documented caveat with
+// no control is just prose (AAASM-5750).
+//
+// recordOutcome dispatches on a goroutine nothing joins, and Assembly.Close
+// tears the native handle down without waiting for it. So the `defer a.Close()`
+// the quick-start itself recommends races every dispatch — and loses. This is
+// not a flaky-timing test in the usual sense: the loss is the reliable outcome,
+// and the assertion is written that way rather than as a tolerance, so if a
+// future flush makes records survive this goes red and the caveat gets removed
+// rather than quietly becoming false.
+func TestARecordDispatchedThenClosedIsDeterministicallyLost(t *testing.T) {
+	const runs = 50
+
+	lost := 0
+	for range runs {
+		capClient, crossings := ffi.NewRecordingClient(ffi.DecisionAllow, "")
+		withCapturingFFIClient(t, capClient)
+
+		a, err := Init(context.Background(),
+			WithGatewayURL("https://gateway.example.com"),
+			WithAPIKey("test-key"),
+			withSidecarAddress("127.0.0.1:50051"),
+			WithSelfAgentID("agent-5750"),
+		)
+		if err != nil {
+			t.Fatalf("Init: %v", err)
+		}
+
+		inner := &auditProbeTool{name: "web_search", result: auditProbePayload + "-RESULT"}
+		wrapped := a.WrapTools([]Tool{inner})
+		_, _ = wrapped[0].Call(context.Background(), `{"q":"x"}`)
+		// Exactly the sequence the quick-start's `defer a.Close()` produces.
+		_ = a.Close()
+
+		found := false
+		for _, event := range crossings.Events() {
+			if strings.Contains(event, auditProbePayload) {
+				found = true
+			}
+		}
+		if !found {
+			lost++
+		}
+	}
+
+	// A positive control on the same harness: with the dispatch given room, the
+	// record does cross. Without it, "lost" is indistinguishable from a probe
+	// that could never observe a record at all.
+	capClient, crossings := ffi.NewRecordingClient(ffi.DecisionAllow, "")
+	withCapturingFFIClient(t, capClient)
+	a, err := Init(context.Background(),
+		WithGatewayURL("https://gateway.example.com"),
+		WithAPIKey("test-key"),
+		withSidecarAddress("127.0.0.1:50051"),
+		WithSelfAgentID("agent-5750"),
+	)
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	wrapped := a.WrapTools([]Tool{&auditProbeTool{name: "web_search", result: auditProbePayload + "-RESULT"}})
+	_, _ = wrapped[0].Call(context.Background(), `{"q":"x"}`)
+	awaitRecordDispatch()
+
+	survived := false
+	for _, event := range crossings.Events() {
+		if strings.Contains(event, auditProbePayload) {
+			survived = true
+		}
+	}
+	if !survived {
+		t.Fatal("the control did not cross either; the probe cannot observe a record, so the " +
+			"loss measured above proves nothing")
+	}
+
+	if lost != runs {
+		t.Errorf("%d of %d records survived Call-then-Close; the quick-start's caveat says the "+
+			"record is lost there. If a flush was added, remove the caveat and this test — do not "+
+			"loosen the assertion", runs-lost, runs)
+	}
+}
+
 // awaitRecordDispatch gives recordOutcome's goroutine room to cross the boundary
 // if it ever would. Sleeping is the honest instrument here: the production path
 // dispatches the record asynchronously and offers no completion signal, so the
