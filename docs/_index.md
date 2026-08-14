@@ -71,10 +71,20 @@ package main
 
 import (
     "context"
+    "errors"
     "log"
 
     "github.com/ai-agent-assembly/go-sdk/assembly"
 )
+
+// echoTool is the smallest value that satisfies assembly.Tool.
+type echoTool struct{}
+
+func (echoTool) Name() string        { return "echo" }
+func (echoTool) Description() string { return "returns its input unchanged" }
+func (echoTool) Call(_ context.Context, input string) (string, error) {
+    return input, nil
+}
 
 func main() {
     ctx := assembly.WithAgentID(context.Background(), "my-agent")
@@ -83,11 +93,24 @@ func main() {
         assembly.WithGatewayURL("https://gateway.example.com"),
         assembly.WithAPIKey("..."), // optional for local dev
     )
-    if err != nil {
-        log.Fatal(err)
+    switch {
+    case errors.Is(err, assembly.ErrSidecarUnavailable):
+        // The default pure-Go build links no native transport, so boot reaches no
+        // runtime: gateway-backed checks are Unsupported on this configuration.
+        // The Quick Start shows the client the wrapper below needs instead.
+        log.Println("init:", err)
+    case err != nil:
+        log.Fatalf("init: %v", err)
+    default:
+        defer func() { _ = a.Close() }()
     }
-    defer a.Close()
 
+    myTools := []assembly.Tool{echoTool{}}
+
+    // The second argument is your GovernanceClient. Passing nil under the default
+    // fail-closed enforce posture leaves each wrapped call Denied before
+    // execution with ErrGovernanceUnavailable, so wire in a real client before
+    // handing these to an agent.
     governed := assembly.WrapTools(myTools, nil)
     _ = governed // hand these to your agent in place of the originals
 }
