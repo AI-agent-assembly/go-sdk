@@ -14,28 +14,31 @@
 // **AAASM-5731 may be cited as the ticket that measured the drop, never as the
 // ticket that will fix it.**
 //
-// The assertion is two-tier, because one tier alone fails in one direction or
-// the other and review caught both:
+// **AAASM-5750 built the sink, so it joined the list it used to be the answer
+// to.** The gate previously required a fixed set of guarded files to name
+// AAASM-5750 as the ticket their `Planned` deferred to. Once the capability
+// exists there is nothing left to defer: a site still saying recording is
+// *Planned* under AAASM-5750 is now describing a shipped behaviour as unbuilt,
+// which is the same stale-pointer defect one ticket later. So the rule collapsed
+// to a single tier — **no forward-looking claim in this module may defer
+// SDK-side audit recording to any of the three tickets that are done with it** —
+// and applies module-wide rather than to a named set.
 //
-//   - a **guarded** site (one of [expectedSites]) must name AAASM-5750 exactly.
-//     Without this the gate stops asserting the thing the change made true —
-//     repointing a guarded site to any other live ticket passed green, which is
-//     precisely the drift the gate exists to catch.
-//   - **any other** site must merely not name a stale referent. Asserting
-//     AAASM-5750 repo-wide was the first version's defect: §6 scopes `Planned`
-//     to any decided-but-unbuilt capability with any ticket, so an unrelated
-//     roadmap row is legitimate and must not fail this gate.
+// §6 still scopes `Planned` to any decided-but-unbuilt capability with any
+// ticket, so an unrelated roadmap deferral naming some other ticket is
+// legitimate and must not fail this gate. Only the three named referents are
+// forbidden.
 //
-// Two limits are disclosed rather than fixed, both measured as currently
-// unreachable:
+// A rule whose expected result is "no findings" needs the scan proved reachable,
+// or a broken walk passes as loudly as a clean tree. [TestTheDeferralScanCanSee]
+// feeds the detector synthetic lines containing exactly the shapes this file
+// forbids and requires it to find them. The empty result below means something
+// only because that control is green.
 //
-//   - the reachability check is per **file**, not per site. A guarded file that
-//     reflowed its real site out of the scan's reach AND gained a second,
-//     correct claim would keep its entry. Requires two coordinated edits; today
-//     no file in this module carries more than one site.
-//   - the gate file is excluded from its own scan, so it is a hiding place for
-//     a stale referent. It is a test file that documents no SDK behaviour, and
-//     the exclusion matches one exact path rather than a prefix.
+// One limit is disclosed rather than fixed: the gate file is excluded from its
+// own scan, so it is a hiding place for a stale referent. It is a test file that
+// documents no SDK behaviour, and the exclusion matches one exact path rather
+// than a prefix.
 package assembly
 
 import (
@@ -46,17 +49,20 @@ import (
 	"testing"
 )
 
-// capabilityReferent is the ticket that owns building the SDK-side audit sink.
-// Guarded sites must name it exactly.
-const capabilityReferent = "AAASM-5750"
-
-// staleReferents are the tickets that *measured* the absence of an SDK-side
-// audit sink. Backward citations to them are correct and are left alone; what
-// this gate forbids is either one appearing as the ticket a forward-looking
-// claim defers to.
-var staleReferents = map[string]bool{
-	"AAASM-5731": true,
-	"AAASM-5681": true,
+// staleReferents are the tickets a forward-looking claim about SDK-side audit
+// recording may no longer defer to. Backward citations to any of them are
+// correct and are left alone — what this gate forbids is one of them appearing
+// as the ticket a *deferral* points at.
+//
+// The reason differs per entry, and the failure message says which:
+//   - AAASM-5731 / AAASM-5681 measured the drop. Neither ever intended to build
+//     a sink, and both resolve to finished work.
+//   - AAASM-5750 built it. A claim that recording is still Planned under 5750
+//     describes shipped behaviour as unbuilt.
+var staleReferents = map[string]string{
+	"AAASM-5731": "measured the drop and never intended to fix it",
+	"AAASM-5681": "measured the drop and never intended to fix it",
+	"AAASM-5750": "built the sink; SDK-side recording is no longer deferred",
 }
 
 // forwardClaim matches the two shapes a deferral takes here: the ADR 0033 §6
@@ -71,22 +77,6 @@ var (
 // defect: this file names AAASM-5750 in its own header, which padded the site
 // count and let a floor be satisfied entirely by the gate quoting itself.
 const gateFile = "assembly/planned_referent_test.go"
-
-// expectedSites are the audit-sink deferrals that must remain reachable by the
-// scan. This is a fixture compared against a walk of the tree, not a constant
-// compared against another constant: if a site is deleted, renamed, or reflowed
-// out of the scan's reach, the walk stops finding it and this fails.
-//
-// Reflow is the realistic case and the one the first version missed — a comment
-// rewrapped so the term and the ticket land on different lines silently left
-// the scan.
-var expectedSites = []string{
-	"assembly/audit_sink.go",
-	"assembly/ffi_governance_client.go",
-	"assembly/tool_wrapper.go",
-	"assembly/op_control_gate_test.go",
-	"assembly/quickstart_negative_control_test.go",
-}
 
 // moduleRoot walks up from the test's working directory to the directory
 // holding go.mod. Resolving it rather than assuming a relative path keeps the
@@ -181,35 +171,7 @@ func findDeferralSites(t *testing.T, root string) []deferralSite {
 			return err
 		}
 
-		lines := strings.Split(string(body), "\n")
-		for i, line := range lines {
-			if !forwardClaim.MatchString(line) {
-				continue
-			}
-
-			// Extend to the next line only when this line carries no ticket of
-			// its own AND does not end a sentence. Without the sentence guard
-			// the window pairs a claim with a ticket belonging to the *next*
-			// sentence — review produced a real case where an inserted line of
-			// forward-looking prose was blamed for a correct backward citation
-			// beneath it. There are 30 such backward citations in this module.
-			window := line
-			if !ticketRefRe.MatchString(line) && !endsSentence(line) && i+1 < len(lines) {
-				window += "\n" + lines[i+1]
-			}
-
-			ticket := ticketRefRe.FindString(window)
-			if ticket == "" {
-				continue
-			}
-
-			sites = append(sites, deferralSite{
-				path:   rel,
-				line:   i + 1,
-				ticket: ticket,
-				text:   strings.TrimSpace(line),
-			})
-		}
+		sites = append(sites, deferralsInLines(rel, strings.Split(string(body), "\n"))...)
 
 		return nil
 	})
@@ -220,50 +182,118 @@ func findDeferralSites(t *testing.T, root string) []deferralSite {
 	return sites
 }
 
-func TestForwardClaimsNameTheRightTicket(t *testing.T) {
-	t.Parallel()
+// deferralsInLines is the detector, split out from the walk so a control can
+// drive it over input it constructs rather than over whatever the tree happens
+// to contain. A gate whose expected result is "nothing found" is only as good as
+// the proof that it can find something.
+func deferralsInLines(path string, lines []string) []deferralSite {
+	var sites []deferralSite
 
-	guarded := make(map[string]bool, len(expectedSites))
-	for _, path := range expectedSites {
-		guarded[path] = true
+	for i, line := range lines {
+		if !forwardClaim.MatchString(line) {
+			continue
+		}
+
+		// Extend to the next line only when this line carries no ticket of its
+		// own AND does not end a sentence. Without the sentence guard the window
+		// pairs a claim with a ticket belonging to the *next* sentence — review
+		// produced a real case where an inserted line of forward-looking prose
+		// was blamed for a correct backward citation beneath it. There are 30
+		// such backward citations in this module.
+		window := line
+		if !ticketRefRe.MatchString(line) && !endsSentence(line) && i+1 < len(lines) {
+			window += "\n" + lines[i+1]
+		}
+
+		ticket := ticketRefRe.FindString(window)
+		if ticket == "" {
+			continue
+		}
+
+		sites = append(sites, deferralSite{
+			path:   path,
+			line:   i + 1,
+			ticket: ticket,
+			text:   strings.TrimSpace(line),
+		})
 	}
 
+	return sites
+}
+
+func TestNoForwardClaimDefersToAFinishedTicket(t *testing.T) {
+	t.Parallel()
+
 	for _, site := range findDeferralSites(t, moduleRoot(t)) {
-		switch {
-		case guarded[site.path]:
-			if site.ticket != capabilityReferent {
-				t.Errorf("%s:%d is a guarded audit-sink deferral and must name %s, "+
-					"not %s — this is the site the referent change corrected, and "+
-					"letting it drift to any other ticket is what this gate exists "+
-					"to prevent: %s",
-					site.path, site.line, capabilityReferent, site.ticket, site.text)
-			}
-		case staleReferents[site.ticket]:
-			t.Errorf("%s:%d defers to %s, which measured the drop and will not fix "+
-				"it — use the ticket that builds the sink (AAASM-5750, per its own "+
-				"description): %s",
-				site.path, site.line, site.ticket, site.text)
+		if reason, stale := staleReferents[site.ticket]; stale {
+			t.Errorf("%s:%d defers to %s, which %s — a forward-looking claim must "+
+				"not point at it: %s",
+				site.path, site.line, site.ticket, reason, site.text)
 		}
 	}
 }
 
-func TestEveryExpectedSiteIsStillReachable(t *testing.T) {
+// TestTheDeferralScanCanSee is the positive control for the assertion above.
+//
+// That assertion expects to find nothing, and every way of breaking the scan —
+// a regex that stops matching, a walk that reaches no files, a window that never
+// extends across a wrapped comment — produces exactly the same green. The
+// detector is therefore fed input that contains each shape it is supposed to
+// catch, and required to catch it. If it stops seeing these, the module-wide
+// silence stops meaning anything.
+func TestTheDeferralScanCanSee(t *testing.T) {
 	t.Parallel()
 
-	seen := make(map[string]bool)
-	for _, site := range findDeferralSites(t, moduleRoot(t)) {
-		seen[site.path] = true
+	for _, tc := range []struct {
+		name   string
+		lines  []string
+		ticket string
+	}{
+		{
+			name:   "term and ticket on one line",
+			lines:  []string{"// recording here is Planned (AAASM-5731), not Observed."},
+			ticket: "AAASM-5731",
+		},
+		{
+			name: "term and ticket wrapped onto two lines",
+			lines: []string{
+				"// Under ADR 0033 section 6 SDK-side recording is Planned",
+				"// (AAASM-5750), not Observed.",
+			},
+			ticket: "AAASM-5750",
+		},
+		{
+			name:   "the termless 'tracked as' shape",
+			lines:  []string{"// Supplying a sink that retains it is tracked as AAASM-5681."},
+			ticket: "AAASM-5681",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			found := deferralsInLines("synthetic.go", tc.lines)
+			if len(found) != 1 || found[0].ticket != tc.ticket {
+				t.Fatalf("the detector found %+v in %q; it must find exactly one deferral "+
+					"naming %s, or the module-wide empty result proves nothing",
+					found, tc.lines, tc.ticket)
+			}
+			if _, stale := staleReferents[found[0].ticket]; !stale {
+				t.Fatalf("%s is not in staleReferents, so this control would not have "+
+					"failed the gate even when detected", found[0].ticket)
+			}
+		})
 	}
 
-	// Anti-vacuity, and the reason it is a set of paths rather than a count: a
-	// count can be held up by an unrelated site appearing as a real one is
-	// deleted. Naming them makes that substitution visible.
-	for _, want := range expectedSites {
-		if !seen[want] {
-			t.Errorf("%s carries no forward claim the scan can pair with a ticket; "+
-				"it was deleted, renamed, or reflowed so the term and the ticket "+
-				"are more than one line apart — in which case a stale referent "+
-				"there would no longer be checked", want)
-		}
+	// The other direction: a deferral naming a ticket that is genuinely still
+	// open must be detected AND permitted. Without this the gate could pass by
+	// forbidding every ticket, which would push authors to drop the reference
+	// §6 requires rather than to fix the referent.
+	open := deferralsInLines("synthetic.go", []string{"// A curated example is Planned (AAASM-9999)."})
+	if len(open) != 1 {
+		t.Fatalf("the detector missed an unrelated roadmap deferral: %+v", open)
+	}
+	if _, stale := staleReferents[open[0].ticket]; stale {
+		t.Fatalf("%s is treated as stale; an unrelated open ticket must remain legitimate",
+			open[0].ticket)
 	}
 }
