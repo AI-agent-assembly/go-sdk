@@ -67,16 +67,16 @@ jobs:
           git diff --exit-code go.mod go.sum
 
       - name: Run govulncheck
-        # AAASM-4634: force the scan onto go1.26.5. CI inherits
-        # GOTOOLCHAIN=local, which makes `go` ignore the `toolchain go1.26.5`
+        # AAASM-4634: force the scan onto go1.26.6. CI inherits
+        # GOTOOLCHAIN=local, which makes `go` ignore the `toolchain go1.26.6`
         # directive in go.mod and run under whatever setup-go resolved
         # (`go-version: 1.26.x` → the 1.26.4 toolcache). An *explicit* version
-        # here overrides `local`: `go` self-downloads and runs exactly go1.26.5,
+        # here overrides `local`: `go` self-downloads and runs exactly go1.26.6,
         # where GO-2026-5856 (crypto/tls ECH privacy leak) is patched — so the
         # scan sees it as fixed instead of flagging it against the older
         # resolved toolchain.
         env:
-          GOTOOLCHAIN: go1.26.5
+          GOTOOLCHAIN: go1.26.6
         run: |
           set +e
           go tool govulncheck ./... 2>&1 | tee /tmp/govulncheck.txt
@@ -88,7 +88,7 @@ jobs:
             # line. Each entry MUST cite the fixed-in version and the follow-up
             # bump ticket. Empty as of AAASM-4709: GO-2026-4971 (previously
             # listed here as "awaiting go1.26.3, no released fix") was fixed in
-            # go1.26.3, and this step runs under GOTOOLCHAIN=go1.26.5 (see the
+            # go1.26.3, and this step runs under GOTOOLCHAIN=go1.26.6 (see the
             # step env above) — i.e. already past that fix — so the entry was
             # dead. GO-2026-5856 (crypto/tls ECH privacy leak, fixed in
             # go1.26.5) likewise resolves as fixed under this toolchain and
@@ -109,13 +109,13 @@ jobs:
     permissions:
       contents: write # upload the SBOM asset to the GitHub Release
     env:
-      # AAASM-4709: pin this job onto the go1.26.5 toolchain, the same one the
+      # AAASM-4709: pin this job onto the go1.26.6 toolchain, the same one the
       # security-gate job above already forces (see the AAASM-4634 comment on
       # its "Run govulncheck" step). Without this, `go` resolves to whatever
       # actions/setup-go's `go-version: "1.26.x"` cached (the 1.26.4 toolcache)
       # and `go install`/cyclonedx-gomod's module resolution run outbound TLS
       # on a stdlib still vulnerable to GO-2026-5856.
-      GOTOOLCHAIN: go1.26.5
+      GOTOOLCHAIN: go1.26.6
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
