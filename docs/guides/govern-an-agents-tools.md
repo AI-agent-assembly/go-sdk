@@ -45,11 +45,21 @@ a, err := assembly.Init(ctx,
     assembly.WithGatewayURL("https://gateway.example.com"),
     assembly.WithAPIKey("..."), // optional for local dev
 )
-if err != nil {
+switch {
+case errors.Is(err, assembly.ErrSidecarUnavailable):
+    // Expected on the default pure-Go build — see the full program below.
+    log.Println("init:", err)
+case err != nil:
     log.Fatalf("init: %v", err)
+default:
+    defer func() { _ = a.Close() }()
 }
-defer a.Close()
 ```
+
+On the default pure-Go build `Init` returns `ErrSidecarUnavailable` whatever
+options you pass, because that build links no native transport. Step 3 is
+unaffected: the wrapper routes each call through the client you hand
+`WrapTools`, not through the runtime handle.
 
 `WithAgentID` stamps this agent's identity onto the context so the gateway can
 attribute every check to `research-agent`. The same identity is stamped onto the
@@ -100,6 +110,7 @@ package main
 
 import (
     "context"
+    "errors"
     "fmt"
     "log"
 
@@ -108,11 +119,31 @@ import (
 
 type searchTool struct{}
 
-func (searchTool) Name() string       { return "web_search" }
+func (searchTool) Name() string        { return "web_search" }
 func (searchTool) Description() string { return "search the public web" }
 func (searchTool) Call(_ context.Context, query string) (string, error) {
     return "results for: " + query, nil
 }
+
+// policyClient is the GovernanceClient step 3 wraps with. It decides in-process
+// here so this program runs with no gateway; a deployment swaps in a
+// gateway-backed client and leaves the WrapTools call untouched.
+type policyClient struct{}
+
+func (policyClient) Check(_ context.Context, req assembly.CheckRequest) (assembly.Decision, error) {
+    if req.ToolName != "web_search" {
+        return assembly.Decision{Denied: true, Reason: "only web_search is allowed here"}, nil
+    }
+    return assembly.Decision{Reason: "allowed by the in-process stand-in"}, nil
+}
+
+func (policyClient) WaitForApproval(_ context.Context, _ assembly.ApprovalRequest) (assembly.Decision, error) {
+    return assembly.Decision{}, nil
+}
+
+func (policyClient) RecordResult(_ context.Context, _ assembly.RecordRequest) error { return nil }
+
+func (policyClient) Close() error { return nil }
 
 func main() {
     ctx := assembly.WithAgentID(context.Background(), "research-agent")
@@ -121,20 +152,33 @@ func main() {
         assembly.WithGatewayURL("https://gateway.example.com"),
         assembly.WithAPIKey("..."),
     )
-    if err != nil {
+    switch {
+    case errors.Is(err, assembly.ErrSidecarUnavailable):
+        // Expected on the default pure-Go build: it links no native transport,
+        // so boot reaches no runtime. The wrapper below is unaffected — it
+        // routes each call through the client passed to WrapTools.
+        log.Println("init:", err)
+    case err != nil:
         log.Fatalf("init: %v", err)
+    default:
+        defer func() { _ = a.Close() }()
     }
-    defer a.Close()
 
-    governed := assembly.WrapTools([]assembly.Tool{searchTool{}}, nil)
+    tools := []assembly.Tool{searchTool{}}
+    governed := assembly.WrapTools(tools, policyClient{})
 
     out, err := governed[0].Call(ctx, "latest go release")
     if err != nil {
         log.Fatalf("tool call: %v", err)
     }
-    fmt.Println(out)
+    fmt.Println(out) // result: results for: latest go release
 }
 ```
+
+Run against a default `go get` install, this program reports
+`ErrSidecarUnavailable`, prints `results for: latest go release`, and exits 0.
+A drift gate in `assembly/documented_programs_test.go` executes it, so it cannot
+rot back into a program that only looks runnable.
 
 ## Wrapping a single tool
 

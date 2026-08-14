@@ -1,15 +1,19 @@
 name: Go Test Matrix
 
+# AAASM-5662: `**/*.md` and `docs/**` are deliberately NOT ignored here.
+#
+# Two suites in ./assembly read the documentation as their subject — the
+# claim-binding gate (AAASM-5529) parses docs/quick-start.md, and
+# documented_programs_test.go extracts and RUNS every `package main` published in
+# Markdown. With those paths ignored, a docs-only PR skipped this workflow
+# entirely, so exactly the change those gates exist to catch was the one change
+# that never ran them. That is how the two broken quick-start programs shipped.
 on:
   pull_request:
     paths-ignore:
-      - "**/*.md"
-      - "docs/**"
       - "LICENSE"
   push:
     paths-ignore:
-      - "**/*.md"
-      - "docs/**"
       - "LICENSE"
     branches:
       - main
