@@ -100,20 +100,20 @@ func (t *AssemblyTool) Call(ctx context.Context, input string) (string, error) {
 // Previously Call returned at the gate branches before RecordResult was
 // invoked at all, so a deny could not reach an audit sink even in principle.
 //
-// What this does not do is make any governed call observable in a released
-// binary. The only production GovernanceClient is ffiGovernanceClient, whose
-// RecordResult discards its argument and returns nil, and the FFI event channel
-// its comment used to defer to carries only the boot "register" event — no
-// tool-call event, measured at the native boundary (AAASM-5731). This method
-// makes the call site correct; supplying a sink that retains the record is a
-// separate capability.
+// Where the record then goes is the client's property, not this method's. On
+// the production client it crosses the native FFI event channel into the
+// runtime's audit pipeline (see [ffiGovernanceClient.RecordResult]), which under
+// ADR 0033 §6 is what *Observed* requires — a durable event attributed to the
+// action — for the allowed and denied paths alike (AAASM-5750). On a governance
+// client that carries no event channel the record still stops here, and
+// [AuditSinkDisposition] is what says which of the two a given run is in.
 //
-// The claim term for that is **Planned** with AAASM-5750 as the reference, not
-// *Unmeasured*: §6 reserves Unmeasured for an action nothing inspected, where
-// nothing is known. Here the record is built, passed, and dropped, and exactly
-// where it stops has been measured — so what is missing is a decided-but-unbuilt
-// sink, which is what Planned names. Either way it is not *Observed*, which
-// needs a durable event attributed to the action.
+// The dispatch is deliberately fire-and-forget and its error deliberately
+// discarded: a failing audit sink must not turn a policy deny into a transport
+// error, and must not add the runtime's latency to a call the gate already
+// decided. The cost is that a record in flight when the process exits can be
+// lost — the sink is best-effort, which is why the term above is *Observed* for
+// records that arrive rather than a guarantee that every one does.
 //
 // This is only reachable after [AssemblyTool.Call] has established a non-nil
 // client, so it needs no nil guard. The nil-client path does not call
