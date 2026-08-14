@@ -195,21 +195,26 @@ var quickStartClaimBindings = []claimBinding{
 		},
 	},
 	{
-		id: "checked-before-execution-and-record-discarded",
+		id: "checked-before-execution-and-record-forwarded",
 		quote: "From here on, each call against a governed tool is checked against the gateway policy " +
-			"before execution, and its outcome is offered to `RecordResult` after — though the client " +
-			"this SDK ships discards that record rather than retaining it, so the SDK layer keeps no " +
-			"audit trail of its own (see the warning on the [documentation home]({{< relref \"/\" >}}), " +
-			"AAASM-5731).",
-		// Two claims in one sentence, so controls for both. The "discards" half
-		// is bound to the audit-sink suite, which drives the SHIPPED client; it
-		// was previously bound to a negative control whose fixture client
-		// RETAINS the record, so that control stayed green when the claim
-		// became false.
+			"before execution, and its outcome is offered to `RecordResult` after — the client this " +
+			"SDK ships forwards that record to the runtime over the native event channel, so a " +
+			"governed call leaves audit evidence when a runtime is connected and none when one is " +
+			"not (inspect `Assembly.AuditSink()` to tell which run you are in, AAASM-5750).",
+		// Two claims in one sentence, so controls for both. The "forwards" half
+		// is bound to the audit-sink suite, which drives the SHIPPED client
+		// against the native boundary; a control whose fixture client supplies
+		// its own sink cannot decide this claim in either direction, and one
+		// such binding did previously stay green while the claim was false.
+		//
+		// The "and none when one is not" half needs the branch that produces
+		// no evidence to be exercised too, or the sentence's second clause is
+		// asserted by nothing.
 		controls: []string{
 			negControl + "TestQuickStartFilesystemNegativeControl/PositiveControl_AllowedWriteCreatesTheFile",
 			negControl + "TestQuickStartFilesystemNegativeControl/NegativeControl_DeniedWriteLeavesNoFile",
-			auditControl + "TestShippedClientDeclaringNoRetentionReachesNothing",
+			auditControl + "TestShippedClientForwardsTheRecordAcrossTheBoundary",
+			auditControl + "TestAGovernanceClientWithNoEventChannelDeclaresDiscarded",
 			auditControl + "TestEveryShippedGovernanceClientDeclaresItsAuditSink",
 		},
 	},

@@ -143,10 +143,10 @@ enforce policy (see
 
 Hand `governed` to your agent in place of the originals. From here on, each call
 against a governed tool is checked against the gateway policy before execution,
-and its outcome is offered to `RecordResult` after — though the client this SDK
-ships discards that record rather than retaining it, so the SDK layer keeps no
-audit trail of its own (see the warning on the
-[documentation home]({{< relref "/" >}}), AAASM-5731).
+and its outcome is offered to `RecordResult` after — the client this SDK ships
+forwards that record to the runtime over the native event channel, so a governed
+call leaves audit evidence when a runtime is connected and none when one is not
+(inspect `Assembly.AuditSink()` to tell which run you are in, AAASM-5750).
 
 ### Govern your first agent
 
