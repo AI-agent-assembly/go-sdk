@@ -72,20 +72,34 @@ const repoRoot = ".."
 // recursively would descend into website/node_modules and native/target.
 var docProgramTrees = []string{"docs"}
 
-// expectedProgramFiles are the files known to publish a complete program.
+// expectedPrograms maps each file known to publish complete programs to HOW MANY
+// it publishes.
 //
-// Asserted as a SET the scan must CONTAIN, not as a count. A count is satisfied
-// by any four programs, so moving a program from one page to another — or
-// deleting one and adding one elsewhere — would keep a count green while the
-// page a reader lands on stops being covered.
-var expectedProgramFiles = []string{
-	"docs/_index.md",
-	"docs/guides/govern-an-agents-tools.md",
-	"docs/quick-start.md",
+// The multiplicity is the load-bearing part, and it was missing. A bare set of
+// filenames is satisfied by one program per file, so docs/quick-start.md — the
+// one page publishing two — could lose either of them and stay "covered": the
+// file is still in the scan, and a floor of the form n >= len(files) is still
+// met. Review demonstrated it by attributing the Step 2 fence
+// (```go title="main.go"), which dropped the population from 4 to 3 with the
+// whole gate green. Total vacuity was caught; the partial case was not, and the
+// partial case is the one that happens.
+//
+// Asserted as an equality per file, so an ADDED program is reported too. A new
+// program appearing in a covered file is a new thing to run, not a bonus.
+var expectedPrograms = map[string]int{
+	"docs/_index.md":                        1,
+	"docs/guides/govern-an-agents-tools.md": 1,
+	"docs/quick-start.md":                   2,
 }
 
 var (
-	goFenceOpen  = regexp.MustCompile("^\\s*```go\\s*$")
+	// goFenceOpen deliberately does NOT require a bare fence. It used to, and an
+	// attributed fence — ```go title="main.go", the standard Docusaurus/Hugo form
+	// and a plausible edit to any of these pages — silently removed that program
+	// from the population rather than failing anything. A gate whose subject can be
+	// deleted by ordinary formatting is not gating it. The trailing (\s|$) keeps
+	// ```golang and ```gotmpl out.
+	goFenceOpen  = regexp.MustCompile("^\\s*```go(\\s|$)")
 	goFenceClose = regexp.MustCompile("^\\s*```\\s*$")
 	// resultComment captures a trailing line comment that narrates output:
 	// `// result: X`. Multi-line, because the anchor has to be end-of-LINE — with
@@ -117,9 +131,15 @@ func (p docProgram) dirName() string {
 }
 
 // extractGoPrograms returns every fenced ```go block in body that opens with
-// `package main`. Split out from the file walk so the extractor can be exercised
+// `package main`, and the line of an unterminated ```go fence if there is one (0
+// otherwise). Split out from the file walk so the extractor can be exercised
 // against a fixture whose answer is known without running the extractor.
-func extractGoPrograms(file, body string) []docProgram {
+//
+// The unterminated line is returned rather than ignored because an unclosed fence
+// loses its block the same silent way an attributed fence used to: the loop never
+// reaches a close, so the accumulated program is dropped with nothing reported.
+// Losing a program has to be an event, not an absence.
+func extractGoPrograms(file, body string) ([]docProgram, int) {
 	var programs []docProgram
 	var current []string
 	openLine := 0
@@ -142,7 +162,10 @@ func extractGoPrograms(file, body string) []docProgram {
 		}
 		current = append(current, line)
 	}
-	return programs
+	if current != nil {
+		return programs, openLine
+	}
+	return programs, 0
 }
 
 // discoverDocPrograms walks the documentation for complete programs.
@@ -155,7 +178,13 @@ func discoverDocPrograms(t *testing.T) []docProgram {
 		if err != nil {
 			t.Fatalf("reading %s: %v", path, err)
 		}
-		programs = append(programs, extractGoPrograms(path, string(body))...)
+		found, unterminated := extractGoPrograms(path, string(body))
+		if unterminated != 0 {
+			t.Errorf("%s opens a ```go fence at line %d that is never closed, so whatever it holds "+
+				"is dropped from this gate's population without failing anything else.",
+				path, unterminated)
+		}
+		programs = append(programs, found...)
 	}
 	sort.Slice(programs, func(i, j int) bool {
 		if programs[i].file != programs[j].file {
@@ -308,8 +337,10 @@ func runGo(t *testing.T, module string, args ...string) (string, int) {
 // scan and a clean run are indistinguishable without it.
 func TestDocumentedProgramScanFindsWhatItGates(t *testing.T) {
 	t.Run("TheExtractorFindsBlocksInAFixtureWithAKnownAnswer", func(t *testing.T) {
-		// Three fences, of which two open with `package main`. Written out here
-		// so the expected answer does not come from the extractor itself.
+		// Four ```go fences, of which three open with `package main` — one bare,
+		// one ATTRIBUTED, one indented inside a list. Written out here so the
+		// expected answer does not come from the extractor itself. The attributed
+		// case is the one review demonstrated the old pattern dropped.
 		fixture := strings.Join([]string{
 			"# heading",
 			"```go",
@@ -320,47 +351,80 @@ func TestDocumentedProgramScanFindsWhatItGates(t *testing.T) {
 			"```go",
 			"governed := assembly.WrapTools(myTools, nil)",
 			"```",
+			"```go title=\"main.go\"",
+			"package main",
+			"// attributed",
+			"```",
+			"```golang",
+			"package main",
+			"```",
 			"```go",
 			"package main",
-			"// second",
+			"// third",
 			"```",
 			"```bash",
 			"package main",
 			"```",
 		}, "\n")
 
-		found := extractGoPrograms("fixture.md", fixture)
-		if len(found) != 2 {
-			t.Fatalf("the extractor found %d programs in a fixture holding exactly 2: %v", len(found), found)
+		found, unterminated := extractGoPrograms("fixture.md", fixture)
+		if unterminated != 0 {
+			t.Fatalf("the fixture is balanced, but the extractor reported an unterminated fence at %d", unterminated)
 		}
-		if found[0].openLine != 2 || found[1].openLine != 10 {
+		if len(found) != 3 {
+			t.Fatalf("the extractor found %d programs in a fixture holding exactly 3: %v", len(found), found)
+		}
+		if found[0].openLine != 2 || found[1].openLine != 10 || found[2].openLine != 17 {
 			t.Fatalf("the extractor mislocated the fences: %v", found)
 		}
-		if !strings.Contains(found[1].source, "// second") {
-			t.Fatalf("the extractor lost the body of the second program: %q", found[1].source)
+		if !strings.Contains(found[1].source, "// attributed") {
+			t.Fatalf("the attributed fence's program was lost or truncated: %q", found[1].source)
+		}
+		if !strings.Contains(found[2].source, "// third") {
+			t.Fatalf("the extractor lost the body of the third program: %q", found[2].source)
 		}
 	})
 
-	t.Run("EveryFileKnownToPublishAProgramIsCovered", func(t *testing.T) {
-		covered := map[string]bool{}
-		for _, program := range discoverDocPrograms(t) {
-			covered[program.file] = true
+	t.Run("TheExtractorReportsAnUnterminatedFenceRatherThanDroppingIt", func(t *testing.T) {
+		fixture := strings.Join([]string{"prose", "```go", "package main", "func main() {}"}, "\n")
+		found, unterminated := extractGoPrograms("fixture.md", fixture)
+		if unterminated != 2 {
+			t.Fatalf("an unclosed ```go fence opened at line 2 was reported as %d", unterminated)
 		}
-		for _, file := range expectedProgramFiles {
-			if !covered[file] {
-				t.Errorf("%s publishes a complete program that this gate no longer sees.\n"+
-					"Files currently covered: %v\n"+
-					"Either the program moved (update expectedProgramFiles) or the scan stopped "+
-					"reaching that directory — the second is the failure this assertion exists for.",
-					file, sortedKeys(covered))
+		if len(found) != 0 {
+			t.Fatalf("an unterminated fence yielded %d programs: %v", len(found), found)
+		}
+	})
+
+	t.Run("EveryFileKnownToPublishProgramsYieldsExactlyAsManyAsExpected", func(t *testing.T) {
+		// Equality per file, not membership. A set of filenames cannot see the
+		// difference between quick-start publishing two programs and publishing
+		// one, which is precisely how an attributed fence removed a program from
+		// this gate while every assertion stayed green.
+		counted := map[string]int{}
+		for _, program := range discoverDocPrograms(t) {
+			counted[program.file]++
+		}
+		for file, expected := range expectedPrograms {
+			if counted[file] != expected {
+				t.Errorf("%s publishes %d complete program(s) that this gate can see; %d expected.\n"+
+					"Counts across the whole scan: %v\n"+
+					"Fewer means one was dropped — an attributed or unclosed fence, or a program "+
+					"moved off the page. More means a new program landed that nothing here has run "+
+					"yet. Update expectedPrograms only once you have checked which.",
+					file, counted[file], expected, counted)
 			}
 		}
 	})
 
 	t.Run("TheScanIsNotEmpty", func(t *testing.T) {
-		if n := len(discoverDocPrograms(t)); n < len(expectedProgramFiles) {
-			t.Fatalf("the scan found %d documented programs, fewer than the %d files known to "+
-				"publish one", n, len(expectedProgramFiles))
+		total := 0
+		for _, expected := range expectedPrograms {
+			total += expected
+		}
+		if n := len(discoverDocPrograms(t)); n < total {
+			t.Fatalf("the scan found %d documented programs, fewer than the %d the known files "+
+				"publish between them", n, total)
 		}
 	})
 }
@@ -585,13 +649,4 @@ func TestTheDocumentedInitOutcomeIsTheOneTheSDKReturns(t *testing.T) {
 				"not change the outcome on the default build, so one of the two is now wrong", a, err)
 		}
 	})
-}
-
-func sortedKeys(set map[string]bool) []string {
-	keys := make([]string, 0, len(set))
-	for key := range set {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	return keys
 }
