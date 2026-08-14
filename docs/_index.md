@@ -15,18 +15,21 @@ initialise the runtime once, wrap your tool slice, and from then on every tool
 call is checked against your gateway's policy *before* it runs, and its outcome
 is offered to the governance client *after* it finishes.
 
-{{< callout type="warning" >}}
-**The SDK layer keeps no audit trail of its own.** The wrapper offers the outcome
-of every governed call — allowed or denied — to `GovernanceClient.RecordResult`,
-but the client this SDK ships **drops it**. Governed tool calls therefore produce
-**no audit evidence** from the SDK layer, and nothing on this path can be
-attributed or reviewed after the fact.
+{{< callout type="info" >}}
+**Audit evidence depends on a connected runtime.** The wrapper offers the outcome
+of every governed call — allowed or denied — to `GovernanceClient.RecordResult`.
+The client this SDK ships forwards it to the runtime over the native event
+channel, the same channel the boot registration event uses, so the record reaches
+the runtime's audit pipeline rather than stopping in your process.
 
-This does not change the enforcement posture: a policy DENY still blocks the tool,
-and the runtime / proxy / eBPF layers are unaffected. `Init` warns when the
-resolved client discards, and `Assembly.AuditSink()` reports it programmatically.
-Pass your own `GovernanceClient` to retain the record
-([AAASM-5731](https://lightning-dust-mite.atlassian.net/browse/AAASM-5731)).
+When no runtime is reachable there is no channel to send on and no record is
+produced. That case is not silent: `Init` warns, and `Assembly.AuditSink()`
+reports which of the two a given run is in — `forwarded` when records are being
+sent, `discarded` or `absent` when they are not
+([AAASM-5750](https://lightning-dust-mite.atlassian.net/browse/AAASM-5750)).
+Delivery is best-effort in either case: the record is dispatched asynchronously
+so a slow sink cannot delay a tool call, which means one in flight at process
+exit can be lost.
 {{< /callout >}}
 
 It is written in idiomatic Go: functional options, context-first APIs, typed
@@ -56,8 +59,8 @@ and the shared [docs hub](https://docs.agent-assembly.com/).
 
 - **Go developers** building or operating AI agents who need allow/deny, budget,
   and topology governance over what their agents can do — and want to add it as a
-  library, not a rewrite. Note that audit evidence is **not** part of what this
-  SDK layer delivers by default (see above).
+  library, not a rewrite. Note that audit evidence from this SDK layer depends
+  on a reachable runtime (see above).
 - **Platform teams** standardising agent governance across services: the same
   gateway and policy back several languages (there are sibling
   [Python](https://docs.agent-assembly.com/python-sdk/) and
