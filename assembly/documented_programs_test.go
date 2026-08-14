@@ -591,25 +591,31 @@ func TestTheProgramRunnerReportsFailure(t *testing.T) {
 // Deliberately asserted through the exported Init, not by reading sidecar.go: a
 // control that restated the implementation would move with it.
 //
-// # BUILD SCOPE, AND WHY IT IS NOT A HOLE
+// # BUILD SCOPE, AND WHY EACH BRANCH ASSERTS
 //
 // The measured claim is about the DEFAULT build, and only that build. Under
 // `-tags aa_ffi_go` (the coverage matrix's cgo leg) the native transport is
-// linked, connect no longer fails, and Init does not return
-// ErrSidecarUnavailable — the first revision of this control asserted the
-// pure-Go outcome unconditionally and went red there, which is the honest
-// signal that the qualifier in the documentation is load-bearing.
+// linked, so a supplied sidecar address is actually connected and Init no longer
+// returns ErrSidecarUnavailable. The first revision asserted the pure-Go outcome
+// unconditionally and went red there; the second skipped under the native
+// binding, which was worse — the only thing then running in every build was a
+// string-presence check on the page, so nothing asserted that the outcome
+// DIFFERS, and the qualifier's load-bearingness lived in this comment plus a CI
+// leg that was green because the assertion had stepped aside.
 //
-// So the two measured subtests run on the build they describe, which CI covers
-// in both cgo legs of the test matrix and the CGO_ENABLED=0 coverage leg. Under
-// the native binding they skip with a stated reason, and the scoping assertion
-// below runs in EVERY build instead: delete "default pure-Go build" from the
-// page and this goes red wherever it runs, so the claim cannot quietly widen to
-// a configuration nothing here measured.
+// Neither subtest skips now. Each carries the outcome true of the build it runs
+// in, so the control moves with the build rather than around it:
+//
+//   - With NO sidecar address the expectation is build-independent, and derived
+//     rather than assumed: boot only attempts the native connect when
+//     opts.sidecarAddress is non-empty (runtime.go), so both builds fall through
+//     to connectToLocalSidecar.
+//   - WITH one, the default build still reports the runtime unavailable and the
+//     native build does not. Under the native binding this fails if the two
+//     converge — the falsification the documented qualifier needs, since a
+//     qualifier that distinguishes nothing is decoration.
 func TestTheDocumentedInitOutcomeIsTheOneTheSDKReturns(t *testing.T) {
 	ctx := WithAgentID(context.Background(), "documented-program-agent")
-	nativeSkip := "the native cgo binding is linked (-tags aa_ffi_go), which is not the build this " +
-		"claim is scoped to; the assertion runs in the default build's matrix legs"
 
 	t.Run("TheDocumentedClaimIsScopedToTheBuildItWasMeasuredOn", func(t *testing.T) {
 		document, err := os.ReadFile(quickStartDoc)
@@ -627,23 +633,30 @@ func TestTheDocumentedInitOutcomeIsTheOneTheSDKReturns(t *testing.T) {
 	})
 
 	t.Run("InitReportsTheRuntimeUnavailableWithNoSidecarOption", func(t *testing.T) {
-		if ffi.NativeBindingEnabled() {
-			t.Skip(nativeSkip)
-		}
 		a, err := Init(ctx, WithGatewayURL("https://gateway.example.com"), WithAPIKey("..."))
 		if !errors.Is(err, ErrSidecarUnavailable) {
 			t.Fatalf("Init returned (%v, %v); the documented programs branch on ErrSidecarUnavailable", a, err)
 		}
 	})
 
-	t.Run("InitReportsTheRuntimeUnavailableWithASidecarAddressToo", func(t *testing.T) {
-		if ffi.NativeBindingEnabled() {
-			t.Skip(nativeSkip)
-		}
+	t.Run("TheSidecarAddressChangesTheOutcomeOnlyUnderTheNativeBinding", func(t *testing.T) {
 		a, err := Init(ctx,
 			WithGatewayURL("https://gateway.example.com"),
 			WithSidecarAddress("127.0.0.1:50051"),
 		)
+
+		if ffi.NativeBindingEnabled() {
+			if errors.Is(err, ErrSidecarUnavailable) {
+				t.Fatalf("under -tags aa_ffi_go, Init with a sidecar address returned "+
+					"ErrSidecarUnavailable (%v) — the same outcome as the default build.\n"+
+					"Then \"on the default pure-Go build\" in the documentation distinguishes "+
+					"nothing, and this control is the only thing that would notice. Either the "+
+					"native path regressed, or the qualifier should come off the page and the "+
+					"claim widen deliberately.", err)
+			}
+			return
+		}
+
 		if !errors.Is(err, ErrSidecarUnavailable) {
 			t.Fatalf("Init returned (%v, %v) with a sidecar address; the pages say the address does "+
 				"not change the outcome on the default build, so one of the two is now wrong", a, err)

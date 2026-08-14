@@ -235,7 +235,7 @@ var quickStartClaimBindings = []claimBinding{
 			"since that build links no native transport.",
 		controls: []string{
 			programControl + "TestTheDocumentedInitOutcomeIsTheOneTheSDKReturns/InitReportsTheRuntimeUnavailableWithNoSidecarOption",
-			programControl + "TestTheDocumentedInitOutcomeIsTheOneTheSDKReturns/InitReportsTheRuntimeUnavailableWithASidecarAddressToo",
+			programControl + "TestTheDocumentedInitOutcomeIsTheOneTheSDKReturns/TheSidecarAddressChangesTheOutcomeOnlyUnderTheNativeBinding",
 		},
 	},
 	{
@@ -247,7 +247,7 @@ var quickStartClaimBindings = []claimBinding{
 			"that option, because the build links no native transport and the fallback connector " +
 			"reaches no sidecar.",
 		controls: []string{
-			programControl + "TestTheDocumentedInitOutcomeIsTheOneTheSDKReturns/InitReportsTheRuntimeUnavailableWithASidecarAddressToo",
+			programControl + "TestTheDocumentedInitOutcomeIsTheOneTheSDKReturns/TheSidecarAddressChangesTheOutcomeOnlyUnderTheNativeBinding",
 			programControl + "TestTheDocumentedInitOutcomeIsTheOneTheSDKReturns/InitReportsTheRuntimeUnavailableWithNoSidecarOption",
 		},
 	},
