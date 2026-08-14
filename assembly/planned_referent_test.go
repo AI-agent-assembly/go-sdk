@@ -142,6 +142,19 @@ func findDeferralSites(t *testing.T, root string) []deferralSite {
 
 	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
+			// An entry that vanished between the directory read and the stat —
+			// a build artefact, an editor temp file, a package manager's
+			// scratch directory. Returning the error aborts the whole walk,
+			// which turns a gate whose verdict is "no findings" into one that
+			// produced no verdict at all; the node SDK's equivalent scan hit
+			// exactly that in CI. Skipping a file that no longer exists is
+			// safe, because it carries no claim. A scan that reaches nothing
+			// is the dangerous failure, and TestTheDeferralScanCanSee is what
+			// catches that.
+			if os.IsNotExist(err) {
+				return nil
+			}
+
 			return err
 		}
 
@@ -168,6 +181,10 @@ func findDeferralSites(t *testing.T, root string) []deferralSite {
 
 		body, err := os.ReadFile(path)
 		if err != nil {
+			if os.IsNotExist(err) {
+				return nil // removed between the walk and the read
+			}
+
 			return err
 		}
 
