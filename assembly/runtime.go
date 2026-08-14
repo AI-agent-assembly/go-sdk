@@ -174,9 +174,11 @@ func (a *Assembly) registerAgent() {
 //
 // It is the programmatic counterpart of the warning warnAuditNotRecorded emits,
 // so a caller wiring up governance can detect in code — not only by reading a
-// log line — that governed actions produce no audit evidence. Anything other
-// than [AuditSinkCallerSupplied] means no claim of attributability or
-// after-the-fact review holds on the SDK path.
+// log line — what evidence a governed action leaves behind. [AuditSinkForwarded]
+// is the value the native runtime path resolves to; [AuditSinkDiscarded] and
+// [AuditSinkAbsent] both mean no claim of attributability or after-the-fact
+// review holds on the SDK path, and [AuditSinkCallerSupplied] means this SDK is
+// not the one to ask.
 func (a *Assembly) AuditSink() AuditSinkDisposition {
 	return ResolveAuditSink(a.governance)
 }
@@ -188,6 +190,10 @@ func (a *Assembly) AuditSink() AuditSinkDisposition {
 // not it kept anything, so a caller had to read ffiGovernanceClient to find out.
 // Enforcement is genuinely unaffected — a runtime DENY still blocks the tool —
 // which is exactly why the gap is easy to miss.
+//
+// Since AAASM-5750 the native runtime path forwards the record, so this fires on
+// the two configurations that still leave no evidence rather than on every
+// non-caller-supplied one; see the enumeration at its call site in Init.
 //
 // It does not fail Init. A caller may not need SDK-side audit, and the runtime /
 // proxy / eBPF layers are unaffected; refusing to start over an evidence gap
@@ -206,15 +212,16 @@ func warnAuditNotRecorded(disposition AuditSinkDisposition) {
 	if disposition == AuditSinkAbsent {
 		mechanism = "no governance client was resolved at Init, so no audit record is even attempted"
 	} else {
-		mechanism = "the governance client this SDK ships drops the record it is handed"
+		mechanism = "the governance client resolved at Init holds no native event channel to send the record on"
 	}
 	log.Printf(
 		"assembly: WARNING: hook-layer audit records are NOT retained (audit sink %q): %s, "+
 			"so governed tool calls produce NO audit evidence from this SDK and nothing on this "+
 			"path can be attributed or reviewed after the fact. Enforcement is unaffected: a "+
 			"runtime DENY still blocks a tool call, and the runtime / proxy / eBPF layers remain "+
-			"authoritative. Pass your own GovernanceClient to WrapTools to retain the record, and "+
-			"inspect Assembly.AuditSink() to detect this programmatically (AAASM-5731).",
+			"authoritative. Connect a runtime so the native FFI path is taken, or pass your own "+
+			"GovernanceClient to WrapTools, and inspect Assembly.AuditSink() to detect this "+
+			"programmatically (AAASM-5731, AAASM-5750).",
 		disposition, mechanism,
 	)
 }

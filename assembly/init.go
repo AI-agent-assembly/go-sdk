@@ -90,11 +90,18 @@ func Init(ctx context.Context, options ...Option) (*Assembly, error) {
 	if err := a.boot(ctx); err != nil {
 		return nil, err
 	}
-	// AAASM-5731 — surface an audit sink that retains nothing on the default
-	// path. Emitted here rather than inside boot because boot has two success
-	// returns (the native FFI path and the sidecar fallback) and the warning must
-	// fire on exactly one of them per Init, whichever was taken.
-	if disposition := a.AuditSink(); disposition != AuditSinkCallerSupplied {
+	// AAASM-5731 — surface an audit sink that retains nothing. Emitted here
+	// rather than inside boot because boot has two success returns (the native
+	// FFI path and the sidecar fallback) and the warning must fire on exactly one
+	// of them per Init, whichever was taken.
+	//
+	// The condition enumerates the dispositions that warrant a warning instead of
+	// excluding the one that does not (AAASM-5750). Written as
+	// `!= AuditSinkCallerSupplied` it warned about every value that was not the
+	// caller's own — which silently included [AuditSinkForwarded] the moment that
+	// value existed, telling a caller whose records do reach the runtime that
+	// they produce no evidence.
+	if disposition := a.AuditSink(); disposition == AuditSinkDiscarded || disposition == AuditSinkAbsent {
 		warnAuditNotRecorded(disposition)
 	}
 	return a, nil
