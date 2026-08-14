@@ -401,12 +401,18 @@ func TestEveryDocumentedProgramRunsToCompletion(t *testing.T) {
 // governance` comment on an unreachable line.
 func TestDocumentedOutputCommentsMatchTheRun(t *testing.T) {
 	module := docProgramModule(t)
-	asserted := 0
+	// annotated counts programs CARRYING an annotation; asserted counts those it
+	// was possible to check. They are separate because a program that exits
+	// non-zero is skipped below, and collapsing the two made this test report
+	// "no program carries an annotation any more" when one did and had died — a
+	// true failure with a false reason, which is the hardest kind to act on.
+	annotated, asserted := 0, 0
 	for _, program := range discoverDocPrograms(t) {
 		expected := resultComment.FindAllStringSubmatch(program.source, -1)
 		if len(expected) == 0 {
 			continue
 		}
+		annotated++
 		packagePath := stage(t, module, program)
 		output, code := runGo(t, module, "run", packagePath)
 		if code != 0 {
@@ -423,10 +429,16 @@ func TestDocumentedOutputCommentsMatchTheRun(t *testing.T) {
 			}
 		}
 	}
-	if asserted == 0 {
+	switch {
+	case annotated == 0:
 		t.Errorf("no documented program carries a `// result: …` annotation any more, so this " +
 			"assertion checked nothing. Restore one, or delete this test — a gate that silently " +
 			"stops having a subject is worse than no gate.")
+	case asserted == 0:
+		t.Errorf("%d documented program(s) carry a `// result: …` annotation and none of them ran, "+
+			"so no annotation was checked. The cause is reported by "+
+			"TestEveryDocumentedProgramRunsToCompletion; this is here so an absent check is not "+
+			"mistaken for a passing one.", annotated)
 	}
 }
 
