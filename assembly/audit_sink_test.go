@@ -204,10 +204,24 @@ func asInterface(t *testing.T, scope *types.Scope, name string) *types.Interface
 	return iface
 }
 
-// TestShippedClientDeclaringNoRetentionReachesNothing measures the declaration
+// TestShippedClientForwardsTheRecordAcrossTheBoundary measures the declaration
 // against behaviour, end to end through Init -> WrapTools -> Call, on the
-// allowed path and the denied one.
-func TestShippedClientDeclaringNoRetentionReachesNothing(t *testing.T) {
+// allowed path and the denied one (AAASM-5750).
+//
+// It is the inversion of the assertion this file shipped with. Until the record
+// path was wired, the shipped client declared AuditSinkDiscarded and this test
+// asserted that nothing crossed; now it declares AuditSinkForwarded and the same
+// measurement, over the same boundary and the same discriminator, has to find
+// the record on the far side. The structure is unchanged on purpose — the
+// positive control and the observed discriminator are what make either direction
+// falsifiable, and swapping the expected outcome must not quietly cost either.
+//
+// Nothing here injects a sink. The client under measurement is the one Init
+// resolves, which is precisely the failure AAASM-5749 found one row over: a test
+// that supplies its own recording client proves that client records, and stays
+// green over a shipped client that is wired to nothing. Reverting
+// ffiGovernanceClient.RecordResult to `return nil` turns both subtests red.
+func TestShippedClientForwardsTheRecordAcrossTheBoundary(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
 		decision int32
@@ -245,9 +259,9 @@ func TestShippedClientDeclaringNoRetentionReachesNothing(t *testing.T) {
 				t.Fatalf("Init: %v", err)
 			}
 
-			if got := a.AuditSink(); got != AuditSinkDiscarded {
+			if got := a.AuditSink(); got != AuditSinkForwarded {
 				t.Fatalf("Assembly.AuditSink() = %q, want %q — the client this SDK ships must "+
-					"declare that it drops the record", got, AuditSinkDiscarded)
+					"declare that it forwards the record", got, AuditSinkForwarded)
 			}
 
 			inner := &auditProbeTool{name: "web_search", result: auditProbePayload + "-RESULT"}
@@ -266,32 +280,76 @@ func TestShippedClientDeclaringNoRetentionReachesNothing(t *testing.T) {
 					(*crossings.Queries)[0].ArgsJSON)
 			}
 
-			// Assert on tc.discriminator, never on the ARGS: the check above
-			// carries the args, so an args assertion would collide with the
-			// positive control and be unfalsifiable. Both boundary channels are
-			// swept, not just the event one — a leak that took the query channel
-			// would otherwise go unseen.
+			// Assert on tc.discriminator, never on the ARGS: the policy check
+			// above already carries the args across this same boundary, so an
+			// args assertion would be satisfied by the positive control alone
+			// and would pass with the record path deleted.
 			//
-			// The discriminator must be reachable on this branch, and reachability
-			// is MEASURED against the production wrapper rather than assumed. If
-			// the probe payload ever stops reaching this RecordRequest field —
-			// because the deny short-circuits with a generic error, or because
-			// the error text drops the reason — the guard fires here instead of
-			// the leak assertion below quietly becoming vacuous again.
+			// The discriminator must be reachable on this branch, and
+			// reachability is MEASURED against the production wrapper rather
+			// than assumed. If the probe payload ever stops reaching this
+			// RecordRequest field — because the deny short-circuits with a
+			// generic error, or because the error text drops the reason — the
+			// guard fires here instead of the assertion below quietly becoming
+			// unfalsifiable.
 			discriminator := observedRecordField(t, tc.recordDecision, tc.recordField)
 			if !strings.Contains(discriminator, auditProbePayload) {
 				t.Fatalf("the %s branch's RecordRequest.%s is %q, which does not carry the probe "+
 					"payload; nothing the record path emits on this branch is distinguishable, so "+
-					"the leak assertion below cannot fail", tc.name, tc.recordField, discriminator)
+					"the assertion below cannot fail", tc.name, tc.recordField, discriminator)
 			}
-			for _, crossing := range boundaryCrossings(crossings) {
-				if strings.Contains(crossing, discriminator) {
-					t.Errorf("a client declaring %q leaked the audit record across the native "+
-						"boundary: %q — the declaration and the behaviour disagree",
-						AuditSinkDiscarded, crossing)
+
+			// The EVENT channel specifically, not every channel: the query
+			// channel is the positive control and already contains the probe.
+			// Searching both would let the control satisfy the assertion.
+			var carried string
+			for _, event := range *crossings.Events {
+				if strings.Contains(event, discriminator) {
+					carried = event
 				}
 			}
+			if carried == "" {
+				t.Fatalf("a client declaring %q sent no audit event carrying the %s branch's "+
+					"record across the native boundary; events seen: %v — the declaration and "+
+					"the behaviour disagree", AuditSinkForwarded, tc.name, *crossings.Events)
+			}
+			// The event must be the tool-result one, not the boot register event
+			// that also rides this channel — otherwise a register payload that
+			// happened to echo the discriminator would satisfy the assertion.
+			if !strings.Contains(carried, `"event_type":"`+eventTypeToolResult+`"`) {
+				t.Errorf("the record crossed as %q, which is not a %q event; the audit record and "+
+					"the boot register event must not be conflated", carried, eventTypeToolResult)
+			}
 		})
+	}
+}
+
+// TestAGovernanceClientWithNoEventChannelDeclaresDiscarded is the other half of
+// the declaration/behaviour bind: the disposition is COMPUTED, so it has to be
+// shown moving.
+//
+// Without this, AuditSink() could return the forwarded literal unconditionally
+// and every assertion above would still pass — the shipped path always has the
+// channel. A querier that carries no event channel is the input that makes the
+// two branches disagree, so it is the input that proves the branch exists.
+func TestAGovernanceClientWithNoEventChannelDeclaresDiscarded(t *testing.T) {
+	t.Parallel()
+
+	client := newFFIGovernanceClient(&fakeQuerier{})
+	if got := client.AuditSink(); got != AuditSinkDiscarded {
+		t.Fatalf("AuditSink() over a querier with no event channel = %q, want %q", got, AuditSinkDiscarded)
+	}
+	if err := client.RecordResult(context.Background(), RecordRequest{ToolName: "web_search"}); err != nil {
+		t.Fatalf("RecordResult with no event channel returned %v, want nil — a missing sink is "+
+			"declared, not raised", err)
+	}
+
+	// The control: the same constructor over a querier that DOES carry the
+	// channel resolves the other way. Two literals compared against each other
+	// would be a tautology; this compares two constructions of the same code.
+	capClient, _ := ffi.NewRecordingClient(ffi.DecisionAllow, "")
+	if got := newFFIGovernanceClient(capClient).AuditSink(); got != AuditSinkForwarded {
+		t.Fatalf("AuditSink() over the connected FFI client = %q, want %q", got, AuditSinkForwarded)
 	}
 }
 
@@ -390,35 +448,72 @@ func TestResolveAuditSinkOnNoRuntimeIsAbsentNotUnknown(t *testing.T) {
 	}
 }
 
-// TestInitWarnsAboutTheAuditGapOnTheDefaultPath pins the signal itself: it must
-// arrive with nothing opted into, because a caller who has to already suspect
-// the problem in order to discover it has not been told.
-func TestInitWarnsAboutTheAuditGapOnTheDefaultPath(t *testing.T) {
-	capClient, _ := ffi.NewRecordingClient(ffi.DecisionAllow, "")
-	withCapturingFFIClient(t, capClient)
+// TestInitWarnsAboutTheAuditGapOnlyWhenThereIsOne pins the signal in both
+// directions (AAASM-5750).
+//
+// The warning previously fired for every disposition that was not the caller's
+// own, which was correct while both remaining values meant "no evidence". With a
+// forwarding path it is no longer correct: a warning on a run whose records DO
+// reach the runtime is a false alarm, and a caller who is warned every time
+// stops reading the warning — which costs the absent case its signal too. So the
+// two are asserted together: the same Init, run over a connected runtime and
+// over none, must differ here.
+func TestInitWarnsAboutTheAuditGapOnlyWhenThereIsOne(t *testing.T) {
+	t.Run("silent when the record is forwarded", func(t *testing.T) {
+		capClient, _ := ffi.NewRecordingClient(ffi.DecisionAllow, "")
+		withCapturingFFIClient(t, capClient)
+		logged := captureLog(t)
 
-	logged := captureLog(t)
-
-	a, err := Init(context.Background(),
-		WithGatewayURL("https://gateway.example.com"),
-		WithAPIKey("test-key"),
-		withSidecarAddress("127.0.0.1:50051"),
-		WithSelfAgentID("agent-5731"),
-	)
-	if err != nil {
-		t.Fatalf("Init: %v", err)
-	}
-	if a.AuditSink() != AuditSinkDiscarded {
-		t.Fatalf("precondition: AuditSink() = %q", a.AuditSink())
-	}
-
-	text := logged.String()
-	for _, want := range []string{"audit", "NOT retained", string(AuditSinkDiscarded), "AAASM-5731"} {
-		if !strings.Contains(text, want) {
-			t.Errorf("Init did not warn about the audit gap on the default path: %q missing from %q",
-				want, text)
+		a, err := Init(context.Background(),
+			WithGatewayURL("https://gateway.example.com"),
+			WithAPIKey("test-key"),
+			withSidecarAddress("127.0.0.1:50051"),
+			WithSelfAgentID("agent-5750"),
+		)
+		if err != nil {
+			t.Fatalf("Init: %v", err)
 		}
-	}
+		if got := a.AuditSink(); got != AuditSinkForwarded {
+			t.Fatalf("precondition: AuditSink() = %q, want %q", got, AuditSinkForwarded)
+		}
+		if text := logged.String(); strings.Contains(text, "NOT retained") {
+			t.Errorf("Init warned that records are NOT retained on a run that forwards them: %q", text)
+		}
+	})
+
+	t.Run("warns when no sink was resolved", func(t *testing.T) {
+		// No FFI client at all, so boot takes the sidecar fallback and leaves
+		// governance nil — AuditSinkAbsent. This is the arm that proves the
+		// silence above is a decision and not a deleted warning.
+		withCapturingFFIClient(t, nil)
+		originalConnector := sidecarConnector
+		t.Cleanup(func() { sidecarConnector = originalConnector })
+		sidecarConnector = func(context.Context, string) (SidecarClient, error) {
+			return stubSidecarClient{}, nil
+		}
+		logged := captureLog(t)
+
+		a, err := Init(context.Background(),
+			WithGatewayURL("https://gateway.example.com"),
+			WithAPIKey("test-key"),
+			WithSelfAgentID("agent-5750"),
+			withSidecarAddress("127.0.0.1:50051"),
+		)
+		if err != nil {
+			t.Fatalf("Init: %v", err)
+		}
+		if got := a.AuditSink(); got != AuditSinkAbsent {
+			t.Fatalf("precondition: AuditSink() = %q, want %q", got, AuditSinkAbsent)
+		}
+
+		text := logged.String()
+		for _, want := range []string{"audit", "NOT retained", string(AuditSinkAbsent), "AAASM-5731"} {
+			if !strings.Contains(text, want) {
+				t.Errorf("Init did not warn about the audit gap when no sink was resolved: "+
+					"%q missing from %q", want, text)
+			}
+		}
+	})
 }
 
 // awaitRecordDispatch gives recordOutcome's goroutine room to cross the boundary
