@@ -195,12 +195,11 @@ var quickStartClaimBindings = []claimBinding{
 		},
 	},
 	{
-		id: "checked-before-execution-and-record-forwarded",
+		id: "checked-before-execution-and-record-handed-over",
 		quote: "From here on, each call against a governed tool is checked against the gateway policy " +
 			"before execution, and its outcome is offered to `RecordResult` after — the client this " +
-			"SDK ships forwards that record to the runtime over the native event channel, so a " +
-			"governed call leaves audit evidence when a runtime is connected and none when one is " +
-			"not (inspect `Assembly.AuditSink()` to tell which run you are in, AAASM-5750).",
+			"SDK ships writes that record to the runtime's native event channel, which is a handoff " +
+			"and not an audit guarantee.",
 		// Two claims in one sentence, so controls for both. The "forwards" half
 		// is bound to the audit-sink suite, which drives the SHIPPED client
 		// against the native boundary; a control whose fixture client supplies
@@ -210,12 +209,36 @@ var quickStartClaimBindings = []claimBinding{
 		// The "and none when one is not" half needs the branch that produces
 		// no evidence to be exercised too, or the sentence's second clause is
 		// asserted by nothing.
+		// The loss clause needs its own control, and it is the reason the
+		// forwarding control alone was not enough: that one calls
+		// awaitRecordDispatch() — a 250 ms sleep — before asserting, so what it
+		// proves is "a record given time to arrive, arrives". That is a true and
+		// useful statement, and it is NOT the sentence above, which is about what
+		// happens when the record is not given that time. Binding only the
+		// forwarding control would have certified the caveat with a measurement
+		// that deliberately avoids the condition the caveat describes.
 		controls: []string{
 			negControl + "TestQuickStartFilesystemNegativeControl/PositiveControl_AllowedWriteCreatesTheFile",
 			negControl + "TestQuickStartFilesystemNegativeControl/NegativeControl_DeniedWriteLeavesNoFile",
 			auditControl + "TestShippedClientForwardsTheRecordAcrossTheBoundary",
 			auditControl + "TestAGovernanceClientWithNoEventChannelDeclaresDiscarded",
 			auditControl + "TestEveryShippedGovernanceClientDeclaresItsAuditSink",
+		},
+	},
+	{
+		id: "the-record-is-lost-on-close",
+		quote: "The send is unacknowledged, and because the dispatch is never joined, a " +
+			"`defer a.Close()` immediately after a call loses the record every time (inspect " +
+			"`Assembly.AuditSink()` to tell which run you are in, AAASM-5750).",
+		// Its own binding, and its own control, because the forwarding control
+		// cannot decide it: that one calls awaitRecordDispatch() — a 250 ms sleep
+		// — before asserting, so what it proves is "a record given time to
+		// arrive, arrives". True and useful, and NOT this sentence, which is
+		// about what happens without that time. Binding this clause to the
+		// forwarding control would certify a caveat with a measurement that
+		// deliberately avoids the condition the caveat describes.
+		controls: []string{
+			auditControl + "TestARecordDispatchedThenClosedIsDeterministicallyLost",
 		},
 	},
 	{

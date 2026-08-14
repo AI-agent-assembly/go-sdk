@@ -144,9 +144,10 @@ enforce policy (see
 Hand `governed` to your agent in place of the originals. From here on, each call
 against a governed tool is checked against the gateway policy before execution,
 and its outcome is offered to `RecordResult` after — the client this SDK ships
-forwards that record to the runtime over the native event channel, so a governed
-call leaves audit evidence when a runtime is connected and none when one is not
-(inspect `Assembly.AuditSink()` to tell which run you are in, AAASM-5750).
+writes that record to the runtime's native event channel, which is a handoff and
+not an audit guarantee. The send is unacknowledged, and because the dispatch is
+never joined, a `defer a.Close()` immediately after a call loses the record every
+time (inspect `Assembly.AuditSink()` to tell which run you are in, AAASM-5750).
 
 ### Govern your first agent
 
