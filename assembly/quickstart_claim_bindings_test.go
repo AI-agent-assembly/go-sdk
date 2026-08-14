@@ -70,9 +70,16 @@ const (
 )
 
 // controlFiles are the test files a binding may name a control from.
+//
+// documented_programs_test.go joined the list for AAASM-5662. It is the only
+// control here that EXECUTES what the page publishes, which is the gap this
+// file's own header admits ("It does not compile or execute a documented
+// snippet"): the "Putting it together" program was bound, allow-listed, and
+// broken at the same time, and every check in this file stayed green.
 var controlFiles = []string{
 	"quickstart_negative_control_test.go",
 	"audit_sink_test.go",
+	"documented_programs_test.go",
 }
 
 // enforcementVocabulary gates NOTHING. It is a severity hint in the failure
@@ -157,8 +164,9 @@ type claimBinding struct {
 }
 
 const (
-	negControl   = "quickstart_negative_control_test.go :: "
-	auditControl = "audit_sink_test.go :: "
+	negControl     = "quickstart_negative_control_test.go :: "
+	auditControl   = "audit_sink_test.go :: "
+	programControl = "documented_programs_test.go :: "
 )
 
 var quickStartClaimBindings = []claimBinding{
@@ -214,17 +222,46 @@ var quickStartClaimBindings = []claimBinding{
 		},
 	},
 	{
-		id: "init-succeeds-once-a-gateway-is-reachable",
-		// RESTORED. Revision 2 dropped this binding when the scan narrowed, so
-		// coverage went DOWN between rounds and the only in-code pointer to
-		// AAASM-5662 went with it — while the sentence stayed published and
-		// stayed false. Inverting the default makes that class of regression
-		// impossible: the sentence is scanned whether or not anyone remembers it.
-		quote: "**`Init` succeeds** once a gateway is reachable (resolved or auto-started).",
-		unprovenReason: "AAASM-5662: the documented \"Putting it together\" program was executed and " +
-			"exits 1 — Init fails before any tool call, because WrapTools is reached with no " +
-			"governance available. No control covers the documented program, and binding one of " +
-			"the WrapTools controls here would misrepresent what was measured.",
+		id: "init-reports-the-runtime-unavailable-on-the-default-build",
+		// REPLACES "**`Init` succeeds** once a gateway is reachable (resolved or
+		// auto-started)", which was registered unproven against AAASM-5662 and was
+		// false in both halves. Init does not succeed on the default build at all:
+		// the pure-Go binding's connect reports the runtime unavailable, so boot
+		// falls through to connectToLocalSidecar, which returns an error
+		// unconditionally. Reachability of the REST gateway is not what decides it.
+		quote: "**`Init` reports the runtime unavailable** on the default pure-Go build: it returns " +
+			"`ErrSidecarUnavailable` with or without " +
+			"[`WithSidecarAddress`](https://pkg.go.dev/github.com/ai-agent-assembly/go-sdk/assembly#WithSidecarAddress), " +
+			"since that build links no native transport.",
+		controls: []string{
+			programControl + "TestTheDocumentedInitOutcomeIsTheOneTheSDKReturns/InitReportsTheRuntimeUnavailableWithNoSidecarOption",
+			programControl + "TestTheDocumentedInitOutcomeIsTheOneTheSDKReturns/InitReportsTheRuntimeUnavailableWithASidecarAddressToo",
+		},
+	},
+	{
+		id: "the-sidecar-option-does-not-change-the-init-outcome",
+		// The prerequisites callout said "without one, `Init` returns
+		// ErrSidecarUnavailable", which reads as a promise about WITH one. The
+		// control that falsifies it passes the option and measures the same error.
+		quote: "On the default pure-Go build `Init` returns `ErrSidecarUnavailable` with or without " +
+			"that option, because the build links no native transport and the fallback connector " +
+			"reaches no sidecar.",
+		controls: []string{
+			programControl + "TestTheDocumentedInitOutcomeIsTheOneTheSDKReturns/InitReportsTheRuntimeUnavailableWithASidecarAddressToo",
+			programControl + "TestTheDocumentedInitOutcomeIsTheOneTheSDKReturns/InitReportsTheRuntimeUnavailableWithNoSidecarOption",
+		},
+	},
+	{
+		id: "the-step-two-program-runs-and-exits-zero",
+		// Bound to the executing gate, not to prose. The two halves falsify each
+		// other's failure mode: delete the ErrSidecarUnavailable branch from the
+		// published program and log.Fatalf fires, so the exit-0 control goes red.
+		quote: "Run against a default `go get` install, this program reports `ErrSidecarUnavailable` " +
+			"and exits 0.",
+		controls: []string{
+			programControl + "TestEveryDocumentedProgramRunsToCompletion",
+			programControl + "TestTheDocumentedInitOutcomeIsTheOneTheSDKReturns/InitReportsTheRuntimeUnavailableWithNoSidecarOption",
+		},
 	},
 	{
 		id: "steps-below-wrap-and-govern-tool-calls",
@@ -245,13 +282,36 @@ var quickStartClaimBindings = []claimBinding{
 		},
 	},
 	{
-		id: "deny-surfaces-as-policy-violation-and-tool-never-runs",
-		quote: "With a real governance client wired in, a `deny` decision surfaces as a " +
-			"`*assembly.PolicyViolationError` and the inner tool never runs.",
+		id: "the-governed-call-returns-the-inner-result",
+		// The half the old page got wrong. It read "**Tool calls run** and return
+		// the inner tool's result" directly under a program that passed nil, where
+		// the call is denied — the same page asserting both. It is true of the
+		// wiring the program now shows, and the output control is what ties it to
+		// that program rather than to a claim about tool calls in general.
+		quote: "**The governed call returns the inner tool's result**, because `localPolicy` " +
+			"evaluated it and allowed it.",
+		controls: []string{
+			programControl + "TestDocumentedOutputCommentsMatchTheRun",
+			negControl + "TestQuickStartFilesystemNegativeControl/PositiveControl_AllowedWriteCreatesTheFile",
+		},
+	},
+	{
+		id: "deny-surfaces-as-policy-violation-and-tool-body-does-not-run",
+		quote: "**A `Decision{Denied: true}` surfaces as a `*assembly.PolicyViolationError`** and the " +
+			"tool body is Denied before execution.",
 		controls: []string{
 			negControl + "TestQuickStartFilesystemNegativeControl/NegativeControl_DeniedWriteLeavesNoFile",
 			negControl + "TestQuickStartNetworkNegativeControl/NegativeControl_DeniedEgressNeverReachesTheListener",
 			negControl + "TestQuickStartWrappingDoesNotDisarmTheOriginalTool",
+		},
+	},
+	{
+		id: "substituting-nil-denies-before-execution",
+		quote: "**Substituting `nil` for `localPolicy`** leaves the call Denied before execution with " +
+			"`ErrGovernanceUnavailable`, under the default fail-closed enforce posture.",
+		controls: []string{
+			negControl + "TestQuickStartDegradedPathCannotLookProtected/NilClientUnderTheDefaultPostureDeniesRatherThanRunning",
+			negControl + "TestQuickStartDegradedPathCannotLookProtected/NilClientWithFailOpenRunsTheToolAndSaysSo",
 		},
 	},
 }
@@ -265,7 +325,6 @@ var allowedSentences = map[string]string{
 	"They're intentionally left out of this quick-start; see `metadata/quickstart/README.md` for the tab-selection rationale.":                                                                                                                                                   "Explains the tab-selection decision and points at its rationale. Editorial, about the page rather than the product.",
 	"*(Optional)* a C compiler, only if you opt into the native FFI transport with `-tags aa_ffi_go`.":                                                                                                                                                                           "A prerequisites bullet naming a build dependency and when it is needed.",
 	"**Go** ≥ 1.26 (the floor declared in `go.mod`).":                                                                                                                                                                                                                            "A prerequisites bullet naming the language version floor.",
-	"**Tool calls run** and return the inner tool's result.":                                                                                                                                                                                                                     "The allowed-path half of the What-to-expect bullet, stating only that a permitted call returns normally; the deny half is the next sentence, which is bound.",
 	"**[Examples]({{< relref \"/examples\" >}})** — wire the SDK into the framework you actually use.":                                                                                                                                                                           "A Where-to-next link item pointing at the examples index. An invitation to read further.",
 	"A new tab appears automatically once a new Go **framework** example lands.":                                                                                                                                                                                                 "Describes how the tab list is generated. Documentation mechanics.",
 	"Agent **registration** is a separate concern that talks to the gateway's gRPC endpoint (default `127.0.0.1:50051`) — `Init` does **not** auto-derive this address the way the Python and Node SDKs do.":                                                                     "Distinguishes registration from gateway resolution and states that Go does less here than the other SDKs. A narrowing statement.",
@@ -277,10 +336,10 @@ var allowedSentences = map[string]string{
 	"For **production**: a gateway URL and, if your gateway requires auth, an API key.":                                                                                                                                                                                          "Names what a production deployment must supply.",
 	"Go's per-framework surface is thin today, so the tabs are **LangChainGo** (the framework path) and **Plain** (the framework-agnostic path).":                                                                                                                                "Explains why only two tabs exist. Editorial, about the page rather than the product.",
 	"Hand `governed` to your agent in place of the originals.":                                                                                                                                                                                                                   "Names the sample's variable. It reads like a claim only because that variable is called `governed`.",
-	"If no gateway can be found and no `aasm` binary is on `PATH`, you'll get a typed `*assembly.ConfigurationError` — see [Troubleshooting]({{< relref \"/troubleshooting\" >}}).":                                                                                              "Names the error returned when no gateway is reachable. A failure-mode description, not an enforcement guarantee.",
 	"Pick your framework — each tab shows the governance slice copied verbatim from a runnable example in the [examples repo](https://github.com/ai-agent-assembly/examples/tree/HEAD/go) (a CI drift check keeps them in lockstep).":                                            "Describes where the tab content comes from. 'governance slice' names the excerpt's provenance, not an outcome.",
 	"Publishing the native library — or dropping the cgo requirement — is a separate product decision; track status in [AAASM-4547](https://lightning-dust-mite.atlassian.net/browse/AAASM-4547) and [AAASM-4469](https://lightning-dust-mite.atlassian.net/browse/AAASM-4469).": "Points at the tickets tracking the native-library decision. Roadmap pointer, claiming nothing about today.",
-	"Reaching it requires an explicit [`WithSidecarAddress`](https://pkg.go.dev/github.com/ai-agent-assembly/go-sdk/assembly#WithSidecarAddress) (or `WithSidecarBinary`) option; without one, `Init` returns `ErrSidecarUnavailable`.":                                          "States what the registration endpoint requires and which error is returned without it. A precondition plus a failure mode.",
+	"Reaching it requires an explicit [`WithSidecarAddress`](https://pkg.go.dev/github.com/ai-agent-assembly/go-sdk/assembly#WithSidecarAddress) (or `WithSidecarBinary`) option.":                                                                                               "Names the option the gRPC registration endpoint requires. A precondition on its own; the sentence that follows states the outcome and is bound.",
+	"See [Troubleshooting]({{< relref \"/troubleshooting\" >}}).":                                                                                                                                                                                                                "A bare cross-reference closing the Init bullet, pointing at the page that covers recovery from a failed Init.",
 	"See [Configuration]({{< relref \"/configuration#gateway-and-credential-resolution\" >}}) for the full resolution order.":                                                                                                                                                    "A cross-reference to the credential-resolution documentation.",
 	"The `:7391` auto-discovery above only resolves the REST gateway URL.":                                                                                                                                                                                                       "Scopes what auto-discovery covers, narrowing rather than widening the claim above it.",
 	"The default pure-Go build has no native transport, so it does not register even when [`WithSidecarAddress`](https://pkg.go.dev/github.com/ai-agent-assembly/go-sdk/assembly#WithSidecarAddress) is set (see that option's godoc).":                                          "States that the default build cannot register at all. Purely a limitation, and it contains no affirmative capability clause.",

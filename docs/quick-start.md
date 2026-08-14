@@ -47,10 +47,11 @@ cgo requirement — is a separate product decision; track status in
   address the way the Python and Node SDKs do. Reaching it requires an
   explicit
   [`WithSidecarAddress`](https://pkg.go.dev/github.com/ai-agent-assembly/go-sdk/assembly#WithSidecarAddress)
-  (or `WithSidecarBinary`) option; without one, `Init` returns
-  `ErrSidecarUnavailable`. And per the warning at the top of this page, the
-  registration handshake itself only runs under the opt-in native cgo binding
-  today.
+  (or `WithSidecarBinary`) option. On the default pure-Go build `Init` returns
+  `ErrSidecarUnavailable` with or without that option, because the build links
+  no native transport and the fallback connector reaches no sidecar. And per
+  the warning at the top of this page, the registration handshake itself only
+  runs under the opt-in native cgo binding today.
 
   To confirm both surfaces are actually up rather than guessing from `Init`'s
   behavior, check them directly:
@@ -115,6 +116,9 @@ func main() {
     log.Println("step 2 complete")
 }
 ```
+
+Run against a default `go get` install, this program reports
+`ErrSidecarUnavailable` and exits 0.
 
 For **local development** you can drop both options entirely — `assembly.Init(ctx)`
 resolves the gateway from the environment, then `~/.aasm/config.yaml`, then the
@@ -279,12 +283,18 @@ func main() {
 
 ### What to expect
 
-- **`Init` succeeds** once a gateway is reachable (resolved or auto-started). If
-  no gateway can be found and no `aasm` binary is on `PATH`, you'll get a typed
-  `*assembly.ConfigurationError` — see [Troubleshooting]({{< relref "/troubleshooting" >}}).
-- **Tool calls run** and return the inner tool's result. With a real governance
-  client wired in, a `deny` decision surfaces as a
-  `*assembly.PolicyViolationError` and the inner tool never runs.
+- **`Init` reports the runtime unavailable** on the default pure-Go build: it
+  returns `ErrSidecarUnavailable` with or without
+  [`WithSidecarAddress`](https://pkg.go.dev/github.com/ai-agent-assembly/go-sdk/assembly#WithSidecarAddress),
+  since that build links no native transport.
+  See [Troubleshooting]({{< relref "/troubleshooting" >}}).
+- **The governed call returns the inner tool's result**, because `localPolicy`
+  evaluated it and allowed it.
+- **A `Decision{Denied: true}` surfaces as a `*assembly.PolicyViolationError`**
+  and the tool body is Denied before execution.
+- **Substituting `nil` for `localPolicy`** leaves the call Denied before
+  execution with `ErrGovernanceUnavailable`, under the default fail-closed
+  enforce posture.
 
 ## Where to next
 
