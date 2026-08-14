@@ -122,7 +122,7 @@ if err != nil {
 defer a.Close()
 ```
 
-`WithAgentID` attaches the calling agent's identity to `ctx`; the SDK stamps it (and any `WithTraceID` / `WithRunID` values) onto every `Check` and `RecordResult`. It reaches the gateway on the `Check` — the `RecordResult` is dropped by the shipped client (see the note at the top). See [Context Propagation](#context-propagation) below for the full set of context helpers.
+`WithAgentID` attaches the calling agent's identity to `ctx`; the SDK stamps it (and any `WithTraceID` / `WithRunID` values) onto every `Check` and `RecordResult`. The `Check` carries them to the gateway, and the `RecordResult` reaches the runtime's audit pipeline when one is connected (see the note at the top). See [Context Propagation](#context-propagation) below for the full set of context helpers.
 
 Then wrap your agent's tools so every call is governed:
 

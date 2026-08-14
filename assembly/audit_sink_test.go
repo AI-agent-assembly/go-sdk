@@ -3,16 +3,18 @@
 //
 // RecordResult returns only an error, so a client that retains the record and a
 // client that throws it away both return nil and are indistinguishable to the
-// caller. The one this SDK ships throws it away, and before this suite there was
-// no signal at all — not even an opt-in one.
+// caller. The one this SDK ships used to throw it away and now forwards it to the
+// runtime; before this suite there was no signal of either — not even an opt-in
+// one.
 //
 // Three things are pinned separately, because any one of them alone passes while
 // the defect is present:
 //
 //  1. every GovernanceClient this package ships *declares* a disposition;
-//  2. the declaration matches what the client does — one that says it does not
-//     retain must reach nothing, measured against a boundary a positive control
-//     proves is reachable;
+//  2. the declaration matches what the client does, in BOTH directions — one
+//     that says it forwards must reach the boundary with the record, one that
+//     says it does not retain must reach nothing, each measured against a
+//     boundary a positive control proves is reachable;
 //  3. Init surfaces it on the DEFAULT path, with nothing opted into.
 //
 // Assertions are over the real shipped client, reached through the real Init /
@@ -271,13 +273,13 @@ func TestShippedClientForwardsTheRecordAcrossTheBoundary(t *testing.T) {
 
 			// Positive control on the SAME boundary. Without it, an empty event
 			// list is indistinguishable from a probe that never ran.
-			if len(*crossings.Queries) == 0 {
+			if len(crossings.Queries()) == 0 {
 				t.Fatal("no policy query crossed the native boundary; the probe never ran, so " +
 					"an empty event list below would prove nothing")
 			}
-			if !strings.Contains((*crossings.Queries)[0].ArgsJSON, auditProbePayload) {
+			if !strings.Contains(crossings.Queries()[0].ArgsJSON, auditProbePayload) {
 				t.Fatalf("positive control did not carry the probe payload: %q",
-					(*crossings.Queries)[0].ArgsJSON)
+					crossings.Queries()[0].ArgsJSON)
 			}
 
 			// Assert on tc.discriminator, never on the ARGS: the policy check
@@ -303,7 +305,7 @@ func TestShippedClientForwardsTheRecordAcrossTheBoundary(t *testing.T) {
 			// channel is the positive control and already contains the probe.
 			// Searching both would let the control satisfy the assertion.
 			var carried string
-			for _, event := range *crossings.Events {
+			for _, event := range crossings.Events() {
 				if strings.Contains(event, discriminator) {
 					carried = event
 				}
@@ -311,7 +313,7 @@ func TestShippedClientForwardsTheRecordAcrossTheBoundary(t *testing.T) {
 			if carried == "" {
 				t.Fatalf("a client declaring %q sent no audit event carrying the %s branch's "+
 					"record across the native boundary; events seen: %v — the declaration and "+
-					"the behaviour disagree", AuditSinkForwarded, tc.name, *crossings.Events)
+					"the behaviour disagree", AuditSinkForwarded, tc.name, crossings.Events())
 			}
 			// The event must be the tool-result one, not the boot register event
 			// that also rides this channel — otherwise a register payload that
@@ -405,8 +407,10 @@ func TestForwardingClientDoesReachTheBoundary(t *testing.T) {
 //
 // The capturing client is the downstream boundary here, not a stand-in for the
 // code under test: what is being observed is the WRAPPER's output, which is the
-// same whichever client receives it — and the production client cannot be used
-// to observe it, because it discards.
+// same whichever client receives it. The production client cannot be used to
+// observe it for a different reason than it once could not — it no longer
+// discards, but it emits to the native boundary rather than exposing the
+// RecordRequest struct, and the struct is what this helper needs.
 func observedRecordField(t *testing.T, decision Decision, field string) string {
 	t.Helper()
 
@@ -432,8 +436,8 @@ func observedRecordField(t *testing.T, decision Decision, field string) string {
 // boundaryCrossings flattens every channel of the native boundary into strings,
 // so a leak is caught whichever one it takes.
 func boundaryCrossings(crossings ffi.NativeCrossings) []string {
-	flattened := append([]string{}, *crossings.Events...)
-	for _, query := range *crossings.Queries {
+	flattened := append([]string{}, crossings.Events()...)
+	for _, query := range crossings.Queries() {
 		flattened = append(flattened, query.ArgsJSON+"|"+query.ToolName+"|"+query.ActionType)
 	}
 	return flattened

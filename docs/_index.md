@@ -46,9 +46,9 @@ Concretely, the SDK is two things working together:
   development, auto-discovers and starts a gateway for you.
 - **An in-process interception shim.** `WrapTools` decorates your existing
   `Tool` values so each `Call` runs a policy `Check` first and offers the outcome
-  to `RecordResult` after (which the shipped client drops — see above). Your
-  agent code keeps calling tools the way it always did; the wrapper does the
-  governance.
+  to `RecordResult` after (which the shipped client forwards to a connected
+  runtime — see above). Your agent code keeps calling tools the way it always
+  did; the wrapper does the governance.
 
 For the platform as a whole — what the gateway is, how policy and budgets are
 authored, and how the three interception layers fit together — see the
