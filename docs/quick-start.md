@@ -143,10 +143,14 @@ enforce policy (see
 
 Hand `governed` to your agent in place of the originals. From here on, each call
 against a governed tool is checked against the gateway policy before execution,
-and its outcome is offered to `RecordResult` after — though the client this SDK
-ships discards that record rather than retaining it, so the SDK layer keeps no
-audit trail of its own (see the warning on the
-[documentation home]({{< relref "/" >}}), AAASM-5731).
+and its outcome is offered to `RecordResult` after — the client this SDK ships
+writes that record to the runtime's native event channel, which is a handoff and
+not an audit guarantee. The send is unacknowledged, and because the dispatch is
+never joined, a `defer a.Close()` immediately after a call loses the record every
+time (inspect `Assembly.AuditSink()` to tell which run you are in, AAASM-5750).
+Downstream of the handoff, [AAASM-5783](https://lightning-dust-mite.atlassian.net/browse/AAASM-5783)
+is open on `report_event` payloads reaching neither the live stream nor the durable
+entry, so no SDK can claim ADR 0033 §6 *Observed* until it lands.
 
 ### Govern your first agent
 

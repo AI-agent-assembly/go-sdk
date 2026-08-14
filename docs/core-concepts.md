@@ -20,14 +20,13 @@ Every governed tool call results in two messages to the gateway:
    (allow, deny, or "pending approval").
 2. A **`RecordResult`** after the tool runs, on the denied path as well as the
    executed one — for the gateway to record the outcome for audit, budgeting and
-   topology. **This second message does not leave the SDK on the default path:**
-   the `GovernanceClient` this SDK ships discards the record instead of sending
-   it, so governed tool calls produce no audit evidence and nothing on this path
-   can be attributed or reviewed after the fact. Enforcement is unaffected — the
-   `Check` above is what blocks a tool. `Init` warns about it and
-   `Assembly.AuditSink()` reports it in code; pass your own `GovernanceClient` to
-   retain the record
-   ([AAASM-5731](https://lightning-dust-mite.atlassian.net/browse/AAASM-5731)).
+   topology. **Whether this second message leaves the SDK depends on the
+   runtime:** the `GovernanceClient` this SDK ships forwards the record over the
+   native event channel when a runtime is connected, and has nowhere to send it
+   when one is not. Enforcement is unaffected either way — the `Check` above is
+   what blocks a tool. `Init` warns when no record can be sent, and
+   `Assembly.AuditSink()` reports which case a run is in
+   ([AAASM-5750](https://lightning-dust-mite.atlassian.net/browse/AAASM-5750)).
 
 These travel over the gateway's wire protocol (gRPC/HTTP). For how the gateway
 itself is built — registry, policy engine, budgets, and the three interception
@@ -276,7 +275,8 @@ caller set.
 `WrapTools` turns a slice of plain `Tool`s into a slice of governed tools. Each
 wrapped tool runs `GovernanceClient.Check` *before* execution and
 `GovernanceClient.RecordResult` *after* — the latter reaching an audit trail only
-if `client` retains it, which the shipped client does not (see above):
+if `client` carries it onward, which the shipped client does over a connected
+runtime and cannot do without one (see above):
 
 ```go
 inner := []assembly.Tool{searchWebTool, runShellTool}

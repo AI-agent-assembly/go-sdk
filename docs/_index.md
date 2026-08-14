@@ -16,17 +16,27 @@ call is checked against your gateway's policy *before* it runs, and its outcome
 is offered to the governance client *after* it finishes.
 
 {{< callout type="warning" >}}
-**The SDK layer keeps no audit trail of its own.** The wrapper offers the outcome
-of every governed call — allowed or denied — to `GovernanceClient.RecordResult`,
-but the client this SDK ships **drops it**. Governed tool calls therefore produce
-**no audit evidence** from the SDK layer, and nothing on this path can be
-attributed or reviewed after the fact.
+**The SDK hands the record to the runtime; it does not give you an audit trail.**
+The wrapper offers the outcome of every governed call — allowed or denied — to
+`GovernanceClient.RecordResult`, and the client this SDK ships writes it to the
+native event channel, the same one the boot registration event uses.
 
-This does not change the enforcement posture: a policy DENY still blocks the tool,
-and the runtime / proxy / eBPF layers are unaffected. `Init` warns when the
-resolved client discards, and `Assembly.AuditSink()` reports it programmatically.
-Pass your own `GovernanceClient` to retain the record
-([AAASM-5731](https://lightning-dust-mite.atlassian.net/browse/AAASM-5731)).
+Three things stand between that and evidence you could cite, and none of them is
+under this SDK's control: the send is **unacknowledged**, so arrival is never
+reported back; the dispatch runs on a goroutine nothing joins, so the
+`defer a.Close()` this guide recommends **loses the record deterministically**
+(measured: 200 of 200); and the native binding is compiled only under
+`-tags aa_ffi_go`, which no published artifact ships — so on a default build
+there is no channel at all.
+
+Downstream of the handoff the picture is no better, and it is tracked rather than
+solved: [AAASM-5783](https://lightning-dust-mite.atlassian.net/browse/AAASM-5783)
+is open on `report_event` payloads reaching neither the live stream nor the
+durable entry. Until it lands, no SDK can claim ADR 0033 §6 *Observed*.
+
+`Init` warns when no record can be sent, and `Assembly.AuditSink()` reports which
+case a run is in
+([AAASM-5750](https://lightning-dust-mite.atlassian.net/browse/AAASM-5750)).
 {{< /callout >}}
 
 It is written in idiomatic Go: functional options, context-first APIs, typed
@@ -43,9 +53,9 @@ Concretely, the SDK is two things working together:
   development, auto-discovers and starts a gateway for you.
 - **An in-process interception shim.** `WrapTools` decorates your existing
   `Tool` values so each `Call` runs a policy `Check` first and offers the outcome
-  to `RecordResult` after (which the shipped client drops — see above). Your
-  agent code keeps calling tools the way it always did; the wrapper does the
-  governance.
+  to `RecordResult` after (which the shipped client hands to a connected runtime
+  — see above). Your agent code keeps calling tools the way it always did; the
+  wrapper does the governance.
 
 For the platform as a whole — what the gateway is, how policy and budgets are
 authored, and how the three interception layers fit together — see the
@@ -56,8 +66,8 @@ and the shared [docs hub](https://docs.agent-assembly.com/).
 
 - **Go developers** building or operating AI agents who need allow/deny, budget,
   and topology governance over what their agents can do — and want to add it as a
-  library, not a rewrite. Note that audit evidence is **not** part of what this
-  SDK layer delivers by default (see above).
+  library, not a rewrite. Note that this SDK layer does not deliver an audit
+  trail (see above).
 - **Platform teams** standardising agent governance across services: the same
   gateway and policy back several languages (there are sibling
   [Python](https://docs.agent-assembly.com/python-sdk/) and

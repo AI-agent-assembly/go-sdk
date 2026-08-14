@@ -143,11 +143,14 @@ func TestTerminatedOpDeniesBeforeGatewayCheck(t *testing.T) {
 // call from the op-control branch alone leaves the whole suite green, so half
 // the fix would have no regression test.
 //
-// It asserts the wrapper's call to RecordResult, which is a test double here.
-// The production client discards the record — see ffiGovernanceClient — so a
-// terminated-op deny produces no audit evidence on the shipped path. Under ADR
-// 0033 §6 that is Planned (AAASM-5750), not Unmeasured: where the record stops
-// has been measured, so it is not the "nothing is known" state.
+// It asserts the wrapper's CALL to RecordResult, against a test double. That is
+// the whole of what it establishes: the double is not the shipped sink, so a
+// green here says nothing about whether the record leaves the process. What the
+// production client does with it — forward it over the native event channel —
+// is measured separately, against the native boundary, in
+// TestShippedClientForwardsTheRecordAcrossTheBoundary (AAASM-5750). Keeping the
+// two apart is deliberate: a suite that proves retention from a double it
+// injected is the defect, not the evidence.
 func TestTerminatedOpDenyCallsRecordResult(t *testing.T) {
 	t.Parallel()
 

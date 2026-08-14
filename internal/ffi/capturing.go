@@ -1,6 +1,9 @@
 package ffi
 
-import "unsafe"
+import (
+	"sync"
+	"unsafe"
+)
 
 // AAASM-4794: this file ships a test-double binding in the regular (non-test)
 // build. That looks fixable with a `_test.go` suffix or a `//go:build test`
@@ -28,6 +31,14 @@ type Registration struct {
 }
 
 type capturingBinding struct {
+	// mu guards Events and recordingBinding.Queries. Both are written from
+	// whatever goroutine crosses the boundary, and since AAASM-5750 that
+	// includes AssemblyTool.recordOutcome's — the audit record is dispatched
+	// on its own goroutine, so a test that reads the crossings races the send
+	// that produced them. The race was already reachable through
+	// forwardingGovernanceClient before the shipped client had a record path;
+	// wiring one made it the normal case rather than the exotic one.
+	mu            sync.Mutex
 	handle        *byte
 	Events        []string
 	Registrations []Registration
@@ -56,11 +67,26 @@ func (b *capturingBinding) connect(_, agentID, sdkVersion string) (unsafe.Pointe
 }
 
 func (b *capturingBinding) sendEvent(_ unsafe.Pointer, _, details string) int32 {
+	b.mu.Lock()
 	b.Events = append(b.Events, details)
-	if b.sendEventStatus != statusOK {
-		return b.sendEventStatus
+	status := b.sendEventStatus
+	b.mu.Unlock()
+
+	if status != statusOK {
+		return status
 	}
 	return statusOK
+}
+
+// snapshotEvents returns a copy of the events recorded so far.
+//
+// A copy, not the slice: handing back the live one moves the race to the
+// caller's range loop, which is exactly where the detector found it.
+func (b *capturingBinding) snapshotEvents() []string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	return append([]string(nil), b.Events...)
 }
 
 func (b *capturingBinding) disconnect(_ unsafe.Pointer) int32 {
@@ -223,13 +249,24 @@ type recordingBinding struct {
 }
 
 func (b *recordingBinding) queryPolicy(_ unsafe.Pointer, agentID, actionType, toolName, argsJSON string) (int32, string, int32) {
+	b.mu.Lock()
 	b.Queries = append(b.Queries, PolicyQuery{
 		AgentID:    agentID,
 		ActionType: actionType,
 		ToolName:   toolName,
 		ArgsJSON:   argsJSON,
 	})
+	b.mu.Unlock()
+
 	return b.queryDecision, b.queryReason, statusOK
+}
+
+// snapshotQueries returns a copy of the policy queries recorded so far.
+func (b *recordingBinding) snapshotQueries() []PolicyQuery {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	return append([]PolicyQuery(nil), b.Queries...)
 }
 
 // NativeCrossings exposes everything that crossed the native FFI boundary during
@@ -240,9 +277,15 @@ func (b *recordingBinding) queryPolicy(_ unsafe.Pointer, agentID, actionType, to
 // nowhere else. The Queries side is the positive control that makes an empty
 // Events slice admissible: without it, zero events is indistinguishable from a
 // probe that never ran (AAASM-5731).
+//
+// The two fields are snapshot FUNCTIONS rather than slice pointers because the
+// audit record is dispatched on its own goroutine (AAASM-5750): a test reading a
+// live slice races the send it is trying to observe, which `go test -race`
+// reports as a genuine data race. Each call returns a copy taken under the
+// binding's lock.
 type NativeCrossings struct {
-	Queries *[]PolicyQuery
-	Events  *[]string
+	Queries func() []PolicyQuery
+	Events  func() []string
 }
 
 // NewRecordingClient returns a capturing client whose register succeeds, whose
@@ -250,5 +293,5 @@ type NativeCrossings struct {
 // of the native boundary — queries and events alike.
 func NewRecordingClient(decision int32, reason string) (*Client, NativeCrossings) {
 	b := &recordingBinding{queryDecision: decision, queryReason: reason}
-	return NewClient(b), NativeCrossings{Queries: &b.Queries, Events: &b.Events}
+	return NewClient(b), NativeCrossings{Queries: b.snapshotQueries, Events: b.snapshotEvents}
 }

@@ -19,6 +19,21 @@ type policyQuerier interface {
 	QueryPolicy(agentID, actionType, toolName, argsJSON string) (decision int32, reason string, err error)
 }
 
+// eventReporter is the subset of *ffi.Client that ships an audit event to the
+// runtime over the active native session.
+//
+// It is a separate optional interface rather than a second method on
+// [policyQuerier] for the same reason [AuditSinkDeclarer] is separate from
+// [GovernanceClient]: widening policyQuerier would break every existing
+// implementation of it, and a governance client built over a querier that
+// genuinely has no event channel must stay constructible — it just cannot claim
+// [AuditSinkForwarded]. The production path always satisfies it, because
+// newFFIGovernanceClient is only ever called with the connected *ffi.Client
+// (runtime.go).
+type eventReporter interface {
+	SendEvent(eventType, details string) error
+}
+
 // ffiGovernanceClient is the production GovernanceClient. Its Check delegates to
 // the native aa_query_policy primitive (AAASM-3048) through the FFI client and
 // maps the returned decision onto a Decision per the shared enforcement
@@ -48,12 +63,23 @@ type policyQuerier interface {
 // That error is returned to the caller; the tool wrapper then honours
 // WithFailClosed to decide whether the call proceeds or is denied.
 type ffiGovernanceClient struct {
-	querier policyQuerier
+	querier  policyQuerier
+	reporter eventReporter
 }
 
 // newFFIGovernanceClient builds a GovernanceClient backed by the FFI client.
+//
+// The audit sink is discovered from the querier rather than passed separately:
+// the production caller hands in the connected *ffi.Client, which carries both
+// the policy and the event channel, while a test double that implements only
+// QueryPolicy still constructs — and then honestly declares
+// [AuditSinkDiscarded] instead of a retention it cannot deliver.
 func newFFIGovernanceClient(querier policyQuerier) *ffiGovernanceClient {
-	return &ffiGovernanceClient{querier: querier}
+	client := &ffiGovernanceClient{querier: querier}
+	if reporter, ok := querier.(eventReporter); ok {
+		client.reporter = reporter
+	}
+	return client
 }
 
 // Check queries the runtime for a policy decision on a tool call. It fails
@@ -150,32 +176,55 @@ func (c *ffiGovernanceClient) WaitForApproval(ctx context.Context, _ ApprovalReq
 	}, nil
 }
 
-// RecordResult discards the record and reports success (AAASM-5731).
+// RecordResult ships the audit record to the runtime over the native FFI event
+// channel (AAASM-5750).
 //
-// The previous comment here said tool results are "reported to the runtime
-// through the FFI event channel by the Assembly runtime, not through this
-// client". Measured against the native boundary, that is not what happens for a
-// tool call: ffi.Client.SendEvent — the SDK's only outbound event channel, see
-// the binding interface in internal/ffi/client.go — has exactly one non-test
-// call site, runtime.go's boot "register" event. No tool-call result crosses it,
-// on the allowed path or the denied one. Both parameters are dropped and the nil
-// return is indistinguishable from a retained record.
+// Until this landed the method dropped both parameters and returned nil, which
+// is indistinguishable from a retained record — the defect AAASM-5731 measured
+// and [AuditSinkDisposition] was introduced to declare. It now sends on
+// ffi.Client.SendEvent, the same primitive and the same connected session that
+// already carries the boot "register" event (runtime.go), on the denied path as
+// well as the executed one, because [AssemblyTool.recordOutcome] calls this from
+// both.
 //
-// This is not an enforcement gap: [AssemblyTool.Call] still denies on a runtime
-// DENY, and the runtime / proxy / eBPF layers remain authoritative. It is an
-// evidence gap, and it is declared rather than left implicit — see AuditSink
-// below. Giving this client a sink that retains the record is a new capability
-// (an FFI record path), not a fix to apply here; under ADR 0033 §6 that is
-// **Planned** (AAASM-5750), not *Observed*.
-func (c *ffiGovernanceClient) RecordResult(_ context.Context, _ RecordRequest) error {
-	return nil
+// **Handing the record over is as far as this method's claim goes.** It does not
+// establish ADR 0033 §6 *Observed*: SendEvent is unacknowledged, so a nil return
+// means "written to the channel", not "received", and certainly not "retained".
+// See [AuditSinkForwarded] for the rest of what stands in the way, and
+// AAASM-5783 for the downstream work that would have to land before any of this
+// could support an *Observed* claim.
+//
+// The transport error is returned rather than swallowed, so a caller that wants
+// to know can. It is *not* allowed to change an enforcement outcome: the sole
+// production caller dispatches this on its own goroutine after the deny decision
+// is already made, and discards the error. A failing sink must never convert a
+// deny into some other error.
+//
+// The record is sent as JSON on the "tool_result" event type. Redaction is not
+// attempted here: the runtime's scanner is the unconditional gate on every
+// inbound frame (aa-runtime pipeline), and re-implementing a weaker copy of it
+// on this side would invite the two to disagree.
+func (c *ffiGovernanceClient) RecordResult(_ context.Context, request RecordRequest) error {
+	if c.reporter == nil {
+		// A querier with no event channel. Nothing to send on; AuditSink says so
+		// rather than this returning a success-shaped nil that looks retained.
+		return nil
+	}
+	return c.reporter.SendEvent(eventTypeToolResult, buildToolResultEvent(request))
 }
 
-// AuditSink declares that this client drops the hook-layer audit record it is
-// given, so [ResolveAuditSink] can surface the gap to the caller and a test can
-// catch a shipped client that discards without saying so (AAASM-5731).
+// AuditSink declares what this client does with the hook-layer audit record it
+// is given, so [ResolveAuditSink] can surface it to the caller and a test can
+// catch a shipped client whose declaration and behaviour disagree (AAASM-5731).
+//
+// Computed from the event channel rather than fixed: the two branches of
+// RecordResult above genuinely differ, and a constant here would be a claim
+// about a channel this client may not hold.
 func (c *ffiGovernanceClient) AuditSink() AuditSinkDisposition {
-	return AuditSinkDiscarded
+	if c.reporter == nil {
+		return AuditSinkDiscarded
+	}
+	return AuditSinkForwarded
 }
 
 // Close releases no resources; the underlying FFI client lifecycle is owned by
