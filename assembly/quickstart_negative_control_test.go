@@ -200,12 +200,11 @@ func TestQuickStartDenyIsAttributable(t *testing.T) {
 		// RecordResult was called at all.
 		//
 		// Scope of the evidence: this is a test double's in-process slice, not
-		// a persisted artifact. The only production client discards the record
-		// (ffiGovernanceClient.RecordResult), so a deny produces no audit
-		// evidence on the shipped path — Planned under ADR 0033 §6 (AAASM-5750),
-		// not Unmeasured, since where the record stops has been measured. What
-		// this control pins is the wrapper's call — the part fixable without a
-		// new FFI capability.
+		// a persisted artifact, so what it pins is the wrapper's call and its
+		// contents — nothing about where the record ends up. That the shipped
+		// client then forwards it across the native boundary into the runtime's
+		// evidence pipeline is measured where it can be, against that boundary,
+		// in TestShippedClientForwardsTheRecordAcrossTheBoundary (AAASM-5750).
 		client.awaitRecord(t)
 		records := client.recordRequests()
 		if len(records) != 1 {
