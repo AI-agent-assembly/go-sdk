@@ -100,20 +100,25 @@ func (t *AssemblyTool) Call(ctx context.Context, input string) (string, error) {
 // Previously Call returned at the gate branches before RecordResult was
 // invoked at all, so a deny could not reach an audit sink even in principle.
 //
-// Where the record then goes is the client's property, not this method's. On
-// the production client it crosses the native FFI event channel into the
-// runtime's audit pipeline (see [ffiGovernanceClient.RecordResult]), which under
-// ADR 0033 §6 is what *Observed* requires — a durable event attributed to the
-// action — for the allowed and denied paths alike (AAASM-5750). On a governance
-// client that carries no event channel the record still stops here, and
-// [AuditSinkDisposition] is what says which of the two a given run is in.
+// Where the record then goes is the client's property, not this method's. On the
+// production client it crosses the native FFI event channel to the runtime (see
+// [ffiGovernanceClient.RecordResult]), for the allowed and denied paths alike
+// (AAASM-5750). That is a handoff and not ADR 0033 §6 *Observed*, which needs a
+// durable event attributed to the action. [AuditSinkDisposition] says which case
+// a given run is in.
 //
 // The dispatch is deliberately fire-and-forget and its error deliberately
 // discarded: a failing audit sink must not turn a policy deny into a transport
 // error, and must not add the runtime's latency to a call the gate already
-// decided. The cost is that a record in flight when the process exits can be
-// lost — the sink is best-effort, which is why the term above is *Observed* for
-// records that arrive rather than a guarantee that every one does.
+// decided.
+//
+// **The cost is not an occasional lost record — it is a deterministic one.**
+// Nothing joins this goroutine, and [Assembly.Close] tears the native handle
+// down without waiting for it, so the `defer a.Close()` the Quick Start
+// recommends races every dispatch this method makes. Measured: 200 of 200
+// records failed to cross the boundary in a Call-then-Close sequence. The error
+// that would report it is discarded three lines below. A caller who needs the
+// record to leave must keep the process alive past the call; there is no flush.
 //
 // This is only reachable after [AssemblyTool.Call] has established a non-nil
 // client, so it needs no nil guard. The nil-client path does not call

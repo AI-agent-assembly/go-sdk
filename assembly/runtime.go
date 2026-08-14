@@ -174,11 +174,12 @@ func (a *Assembly) registerAgent() {
 //
 // It is the programmatic counterpart of the warning warnAuditNotRecorded emits,
 // so a caller wiring up governance can detect in code — not only by reading a
-// log line — what evidence a governed action leaves behind. [AuditSinkForwarded]
-// is the value the native runtime path resolves to; [AuditSinkDiscarded] and
-// [AuditSinkAbsent] both mean no claim of attributability or after-the-fact
-// review holds on the SDK path, and [AuditSinkCallerSupplied] means this SDK is
-// not the one to ask.
+// log line — where a governed action's record was handed. [AuditSinkForwarded]
+// is the value the native runtime path resolves to, and it reports a handoff
+// rather than evidence; [AuditSinkDiscarded] and [AuditSinkAbsent] both mean no
+// record left the process at all, so no claim of attributability or
+// after-the-fact review holds on that path; [AuditSinkCallerSupplied] means this
+// SDK is not the one to ask. None of them is ADR 0033 §6 *Observed*.
 func (a *Assembly) AuditSink() AuditSinkDisposition {
 	return ResolveAuditSink(a.governance)
 }

@@ -19,41 +19,53 @@ package assembly
 // then keeps, so the strongest thing it may say for its own client is
 // [AuditSinkForwarded] — and for anyone else's, the absence of a claim.
 //
-// Under ADR 0033 §6 the term each value earns differs, so the disposition is
-// what a claim must be read off:
+// **No value here earns ADR 0033 §6 *Observed*.** §6's evidence column requires
+// *a durable event attributed to the action*, and this SDK cannot establish that
+// from its side of the FFI — see [AuditSinkForwarded]. What the disposition
+// reports is where the record was handed, not where it ended up:
 //
-//   - [AuditSinkForwarded] — the record crosses the native boundary into the
-//     runtime's evidence pipeline, which is what *Observed* requires: a durable
-//     event attributed to the action.
-//   - [AuditSinkDiscarded] — the record is built and dropped. No evidence, and
-//     the sink that would carry it is not present in this configuration:
-//     *Unsupported*.
+//   - [AuditSinkForwarded] — the record crosses the native boundary to the
+//     runtime. A handoff, not an arrival, and not evidence.
+//   - [AuditSinkDiscarded] — the record is built and dropped, because the client
+//     holds no event channel: *Unsupported* for that configuration.
 //   - [AuditSinkAbsent] — no record is attempted, because no governance client
 //     was resolved. The control is configured and unavailable: *Degraded*.
 //   - [AuditSinkCallerSupplied] — no claim; whatever the caller's client earns.
 type AuditSinkDisposition string
 
 const (
-	// AuditSinkForwarded means the record crosses the native FFI event channel
-	// into the runtime, on the same session and by the same primitive
-	// (ffi.Client.SendEvent) that already carries the boot "register" event. The
-	// runtime enriches, re-scans and admits it to its audit pipeline, so the
-	// event reaches the evidence pipeline rather than stopping in this process
+	// AuditSinkForwarded means the record crosses the native FFI event channel to
+	// the runtime, on the same session and by the same primitive
+	// (ffi.Client.SendEvent) that already carries the boot "register" event
 	// (AAASM-5750).
 	//
-	// It says "forwarded", not "recorded", on purpose. This SDK observes that the
-	// event crossed the boundary; retention past that point belongs to the
-	// runtime and the gateway behind it, and claiming their outcome from here
-	// would be broadening what this layer can see (ADR 0034).
+	// **The handoff is the whole of the claim, and it is weaker than it looks.**
+	// It says "forwarded", not "recorded", because three separate things this SDK
+	// cannot see stand between the send and any durable evidence: the send is
+	// fire-and-forget with no acknowledgement, the record is dispatched on a
+	// goroutine nothing joins (see [AssemblyTool.recordOutcome]), and what the
+	// runtime and gateway retain is theirs to state. Do not read *Observed* off
+	// this value — that needs a durable event attributed to the action, which is
+	// not established here.
+	//
+	// **Not reachable from a released artifact.** The native binding is compiled
+	// only under `-tags aa_ffi_go` with cgo; the default build selects the
+	// fallback, whose sendEvent returns statusRuntimeUnavailable even against a
+	// live listener, and `libaa_ffi_go` is not published anywhere (see
+	// docs/quick-start.md). So today this value is reachable only from a
+	// custom-built binary.
 	AuditSinkForwarded AuditSinkDisposition = "forwarded"
 
 	// AuditSinkDiscarded means the record is built and handed to the client,
-	// which drops it. The call site is correct and the sink is not: swapping in
-	// a retaining client is all that is missing. In this SDK it is what
-	// [GovernanceClient.RecordResult] falls back to when the governance client
-	// was built over a policy querier that carries no event channel — a shape
-	// the shipped runtime path does not produce, but which a partially-wired
-	// client can.
+	// which drops it, because that client holds no event channel to send it on.
+	//
+	// **It has no production population in this SDK.** newFFIGovernanceClient is
+	// unexported and boot only ever calls it with the connected *ffi.Client, so
+	// the only way to reach this value is a test double that implements
+	// QueryPolicy and not SendEvent. It is kept because the disposition is
+	// computed rather than fixed, and a computed value that cannot report the
+	// negative case is not a measurement — but no released configuration
+	// produces it.
 	AuditSinkDiscarded AuditSinkDisposition = "discarded"
 
 	// AuditSinkAbsent means no record is even attempted — there is no sink to

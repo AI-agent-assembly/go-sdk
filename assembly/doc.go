@@ -5,13 +5,14 @@
 // connectivity, context propagation (agent ID, trace ID, run ID), and HTTP/gRPC
 // middleware for outbound interception.
 //
-// It keeps no audit trail of its own, but it does feed one. A governed call's
-// outcome is offered to [GovernanceClient.RecordResult], and the client this SDK
-// ships forwards it to the runtime over the native event channel, so the record
-// reaches the runtime's audit pipeline rather than stopping in this process. With
-// no runtime connected there is no channel to send on and the call produces no
-// audit evidence; enforcement is unaffected either way. [Init] warns in that case
-// and [Assembly.AuditSink] reports which case a run is in — see
+// It keeps no audit trail of its own. A governed call's outcome is offered to
+// [GovernanceClient.RecordResult], and the client this SDK ships hands it to the
+// runtime over the native event channel — a handoff, not a retention guarantee:
+// the send is unacknowledged and the dispatch is not joined before shutdown, so
+// this SDK cannot tell you the record survived, and does not claim it did. With
+// no runtime connected there is no channel at all and the call produces no audit
+// evidence. Enforcement is unaffected either way. [Init] warns in that case and
+// [Assembly.AuditSink] reports which case a run is in — see
 // [AuditSinkDisposition] (AAASM-5750).
 //
 // # Quick Start
@@ -48,10 +49,11 @@
 // the executed one.
 //
 // Where that record goes is a property of the client, not of the wrapper. The
-// client this SDK ships forwards it to a connected runtime and has nowhere to
-// send it without one; for a client you supply, this SDK makes no claim either
-// way. Init warns when no record can be sent and [Assembly.AuditSink] reports
-// which case a run is in — see [AuditSinkDisposition] (AAASM-5750).
+// client this SDK ships hands it to a connected runtime and has nowhere to send
+// it without one; for a client you supply, this SDK makes no claim either way.
+// No path here reaches ADR 0033 §6 *Observed*. Init warns when no record can be
+// sent and [Assembly.AuditSink] reports which case a run is in — see
+// [AuditSinkDisposition] (AAASM-5750).
 //
 // # Context Propagation
 //

@@ -183,11 +183,14 @@ func (c *ffiGovernanceClient) WaitForApproval(ctx context.Context, _ ApprovalReq
 // is indistinguishable from a retained record — the defect AAASM-5731 measured
 // and [AuditSinkDisposition] was introduced to declare. It now sends on
 // ffi.Client.SendEvent, the same primitive and the same connected session that
-// already carries the boot "register" event (runtime.go); the runtime enriches
-// the frame, re-scans it unconditionally, and admits it to its audit pipeline.
-// That is what ADR 0033 §6 *Observed* asks for — a durable event attributed to
-// the action — and it is reached on the denied path as well as the executed one,
-// because [AssemblyTool.recordOutcome] calls this from both.
+// already carries the boot "register" event (runtime.go), on the denied path as
+// well as the executed one, because [AssemblyTool.recordOutcome] calls this from
+// both.
+//
+// **Handing the record over is as far as this method's claim goes.** It does not
+// establish ADR 0033 §6 *Observed*: SendEvent is unacknowledged, so a nil return
+// means "written to the channel", not "received", and certainly not "retained".
+// See [AuditSinkForwarded] for the rest of what stands in the way.
 //
 // The transport error is returned rather than swallowed, so a caller that wants
 // to know can. It is *not* allowed to change an enforcement outcome: the sole
