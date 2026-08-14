@@ -59,6 +59,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/ai-agent-assembly/go-sdk/internal/ffi"
 )
 
 // repoRoot is the checkout root relative to this package's test working
@@ -524,10 +526,46 @@ func TestTheProgramRunnerReportsFailure(t *testing.T) {
 //
 // Deliberately asserted through the exported Init, not by reading sidecar.go: a
 // control that restated the implementation would move with it.
+//
+// # BUILD SCOPE, AND WHY IT IS NOT A HOLE
+//
+// The measured claim is about the DEFAULT build, and only that build. Under
+// `-tags aa_ffi_go` (the coverage matrix's cgo leg) the native transport is
+// linked, connect no longer fails, and Init does not return
+// ErrSidecarUnavailable — the first revision of this control asserted the
+// pure-Go outcome unconditionally and went red there, which is the honest
+// signal that the qualifier in the documentation is load-bearing.
+//
+// So the two measured subtests run on the build they describe, which CI covers
+// in both cgo legs of the test matrix and the CGO_ENABLED=0 coverage leg. Under
+// the native binding they skip with a stated reason, and the scoping assertion
+// below runs in EVERY build instead: delete "default pure-Go build" from the
+// page and this goes red wherever it runs, so the claim cannot quietly widen to
+// a configuration nothing here measured.
 func TestTheDocumentedInitOutcomeIsTheOneTheSDKReturns(t *testing.T) {
 	ctx := WithAgentID(context.Background(), "documented-program-agent")
+	nativeSkip := "the native cgo binding is linked (-tags aa_ffi_go), which is not the build this " +
+		"claim is scoped to; the assertion runs in the default build's matrix legs"
+
+	t.Run("TheDocumentedClaimIsScopedToTheBuildItWasMeasuredOn", func(t *testing.T) {
+		document, err := os.ReadFile(quickStartDoc)
+		if err != nil {
+			t.Fatalf("cannot read %s: %v", quickStartDoc, err)
+		}
+		for _, required := range []string{"default pure-Go build", "ErrSidecarUnavailable"} {
+			if !strings.Contains(string(document), required) {
+				t.Errorf("%s no longer contains %q.\n"+
+					"The Init claim on that page holds for the default build and was measured only "+
+					"there; without the qualifier it reads as a claim about every build, including "+
+					"the one under -tags aa_ffi_go where it is false.", quickStartDoc, required)
+			}
+		}
+	})
 
 	t.Run("InitReportsTheRuntimeUnavailableWithNoSidecarOption", func(t *testing.T) {
+		if ffi.NativeBindingEnabled() {
+			t.Skip(nativeSkip)
+		}
 		a, err := Init(ctx, WithGatewayURL("https://gateway.example.com"), WithAPIKey("..."))
 		if !errors.Is(err, ErrSidecarUnavailable) {
 			t.Fatalf("Init returned (%v, %v); the documented programs branch on ErrSidecarUnavailable", a, err)
@@ -535,6 +573,9 @@ func TestTheDocumentedInitOutcomeIsTheOneTheSDKReturns(t *testing.T) {
 	})
 
 	t.Run("InitReportsTheRuntimeUnavailableWithASidecarAddressToo", func(t *testing.T) {
+		if ffi.NativeBindingEnabled() {
+			t.Skip(nativeSkip)
+		}
 		a, err := Init(ctx,
 			WithGatewayURL("https://gateway.example.com"),
 			WithSidecarAddress("127.0.0.1:50051"),
