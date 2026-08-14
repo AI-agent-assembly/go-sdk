@@ -28,8 +28,9 @@ type ApprovalRequest struct {
 // [GovernanceClient.RecordResult].
 //
 // Whether it reaches an audit trail is a property of the client, not of this
-// struct: the client this SDK ships discards it (see [AuditSinkDisposition],
-// AAASM-5731), so on the shipped path nothing built from this type is retained.
+// struct. On the client this SDK ships it is forwarded to the runtime over the
+// native event channel (AAASM-5750); on a caller's own client this SDK makes no
+// claim. [AuditSinkDisposition] is where a given run's answer is read off.
 //
 // Since AAASM-5665 the wrapper emits one for a call that was denied before
 // execution as well as one that ran, so the struct no longer implies the tool

@@ -5,13 +5,16 @@
 // connectivity, context propagation (agent ID, trace ID, run ID), and HTTP/gRPC
 // middleware for outbound interception.
 //
-// It does NOT keep an audit trail of its own. The outcome of every governed
-// call is offered to [GovernanceClient.RecordResult], but the client this SDK
-// ships drops it, so governed tool calls produce no audit evidence from the SDK
-// layer and nothing on this path can be attributed or reviewed after the fact.
-// Enforcement is unaffected. [Init] warns when that is the case and
-// [Assembly.AuditSink] reports it programmatically — see
-// [AuditSinkDisposition] (AAASM-5731).
+// It keeps no audit trail of its own. A governed call's outcome is offered to
+// [GovernanceClient.RecordResult], and the client this SDK ships hands it to the
+// runtime over the native event channel — a handoff, not a retention guarantee:
+// the send is unacknowledged and the dispatch is not joined before shutdown, so
+// this SDK cannot tell you the record survived, and does not claim it did. What
+// happens downstream of the handoff is tracked as AAASM-5783 and is unfixed. With
+// no runtime connected there is no channel at all and the call produces no audit
+// evidence. Enforcement is unaffected either way. [Init] warns in that case and
+// [Assembly.AuditSink] reports which case a run is in — see
+// [AuditSinkDisposition] (AAASM-5750).
 //
 // # Quick Start
 //
@@ -46,12 +49,12 @@
 // [GovernanceClient.RecordResult] after execution, on the denied path as well as
 // the executed one.
 //
-// Whether that record is *retained* is a property of the client, not of the
-// wrapper, and the client this SDK ships drops it: governed tool calls produce
-// no audit evidence from the SDK layer unless you pass your own
-// GovernanceClient. Init warns when that is the case and
-// [Assembly.AuditSink] reports it programmatically — see
-// [AuditSinkDisposition] (AAASM-5731).
+// Where that record goes is a property of the client, not of the wrapper. The
+// client this SDK ships hands it to a connected runtime and has nowhere to send
+// it without one; for a client you supply, this SDK makes no claim either way.
+// No path here reaches ADR 0033 §6 *Observed*. Init warns when no record can be
+// sent and [Assembly.AuditSink] reports which case a run is in — see
+// [AuditSinkDisposition] (AAASM-5750).
 //
 // # Context Propagation
 //

@@ -49,9 +49,10 @@ func WrapTools(toolList []Tool, client GovernanceClient, options ...Option) []To
 
 `WrapTools` returns a new slice the same length as `toolList`, where each tool is
 governed: a policy `Check` runs before `Call`, a `RecordResult` after. Whether
-that record is *retained* is a property of `client`, not of the wrapper — the
-client this SDK ships drops it (`Assembly.AuditSink()` reports which you have,
-AAASM-5731). Pass `nil` for `client` to get a passthrough wrapper.
+that record goes anywhere is a property of `client`, not of the wrapper — the
+client this SDK ships forwards it to a connected runtime (`Assembly.AuditSink()`
+reports which you have, AAASM-5750). Pass `nil` for `client` to get a passthrough
+wrapper.
 
 ```go
 type AssemblyTool struct{ /* unexported */ }

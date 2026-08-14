@@ -203,21 +203,33 @@ var quickStartClaimBindings = []claimBinding{
 		},
 	},
 	{
-		id: "checked-before-execution-and-record-discarded",
+		id: "checked-before-execution-and-record-handed-over",
 		quote: "From here on, each call against a governed tool is checked against the gateway policy " +
-			"before execution, and its outcome is offered to `RecordResult` after — though the client " +
-			"this SDK ships discards that record rather than retaining it, so the SDK layer keeps no " +
-			"audit trail of its own (see the warning on the [documentation home]({{< relref \"/\" >}}), " +
-			"AAASM-5731).",
-		// Two claims in one sentence, so controls for both. The "discards" half
-		// is bound to the audit-sink suite, which drives the SHIPPED client; it
-		// was previously bound to a negative control whose fixture client
-		// RETAINS the record, so that control stayed green when the claim
-		// became false.
+			"before execution, and its outcome is offered to `RecordResult` after — the client this " +
+			"SDK ships writes that record to the runtime's native event channel, which is a handoff " +
+			"and not an audit guarantee.",
+		// Two claims in one sentence, so controls for both. The "forwards" half
+		// is bound to the audit-sink suite, which drives the SHIPPED client
+		// against the native boundary; a control whose fixture client supplies
+		// its own sink cannot decide this claim in either direction, and one
+		// such binding did previously stay green while the claim was false.
+		//
+		// The "and none when one is not" half needs the branch that produces
+		// no evidence to be exercised too, or the sentence's second clause is
+		// asserted by nothing.
+		// The loss clause needs its own control, and it is the reason the
+		// forwarding control alone was not enough: that one calls
+		// awaitRecordDispatch() — a 250 ms sleep — before asserting, so what it
+		// proves is "a record given time to arrive, arrives". That is a true and
+		// useful statement, and it is NOT the sentence above, which is about what
+		// happens when the record is not given that time. Binding only the
+		// forwarding control would have certified the caveat with a measurement
+		// that deliberately avoids the condition the caveat describes.
 		controls: []string{
 			negControl + "TestQuickStartFilesystemNegativeControl/PositiveControl_AllowedWriteCreatesTheFile",
 			negControl + "TestQuickStartFilesystemNegativeControl/NegativeControl_DeniedWriteLeavesNoFile",
-			auditControl + "TestShippedClientDeclaringNoRetentionReachesNothing",
+			auditControl + "TestShippedClientForwardsTheRecordAcrossTheBoundary",
+			auditControl + "TestAGovernanceClientWithNoEventChannelDeclaresDiscarded",
 			auditControl + "TestEveryShippedGovernanceClientDeclaresItsAuditSink",
 		},
 	},
@@ -262,6 +274,37 @@ var quickStartClaimBindings = []claimBinding{
 			programControl + "TestEveryDocumentedProgramRunsToCompletion",
 			programControl + "TestTheDocumentedInitOutcomeIsTheOneTheSDKReturns/InitReportsTheRuntimeUnavailableWithNoSidecarOption",
 		},
+	},
+	{
+		id: "the-record-is-lost-on-close",
+		quote: "The send is unacknowledged, and because the dispatch is never joined, a " +
+			"`defer a.Close()` immediately after a call loses the record every time (inspect " +
+			"`Assembly.AuditSink()` to tell which run you are in, AAASM-5750).",
+		// Its own binding, and its own control, because the forwarding control
+		// cannot decide it: that one calls awaitRecordDispatch() — a 250 ms sleep
+		// — before asserting, so what it proves is "a record given time to
+		// arrive, arrives". True and useful, and NOT this sentence, which is
+		// about what happens without that time. Binding this clause to the
+		// forwarding control would certify a caveat with a measurement that
+		// deliberately avoids the condition the caveat describes.
+		controls: []string{
+			auditControl + "TestARecordDispatchedThenClosedIsDeterministicallyLost",
+		},
+	},
+	{
+		id: "downstream-of-the-handoff-is-tracked-not-fixed",
+		quote: "Downstream of the handoff, [AAASM-5783](https://lightning-dust-mite.atlassian.net/browse/AAASM-5783) " +
+			"is open on `report_event` payloads reaching neither the live stream nor the durable " +
+			"entry, so no SDK can claim ADR 0033 §6 *Observed* until it lands.",
+		// A statement about work tracked in ANOTHER repository, so no control here
+		// can decide it — the behaviour it describes lives in aa-sdk-client and
+		// aa-runtime, not in this module. Binding it to one of the audit-sink
+		// controls would be the error this file exists to prevent: a control that
+		// measures something adjacent, standing in for a claim it cannot reach.
+		unprovenReason: "AAASM-5783: the payload gap is in aa-sdk-client / aa-runtime, outside this " +
+			"module's test boundary. The sentence is a forward pointer at open work, not a claim " +
+			"about this SDK's behaviour, so it is deliberately unproven here rather than bound to " +
+			"a control that cannot decide it.",
 	},
 	{
 		id: "steps-below-wrap-and-govern-tool-calls",

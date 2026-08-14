@@ -11,40 +11,78 @@ package assembly
 // path that produces no evidence, and until this type existed there was no way
 // to find that out short of reading the implementation.
 //
-// The vocabulary distinguishes *how* a record fails to be retained, not just
-// that it does, because the two failures have different blast radii and the
-// Node and Python SDKs sit on opposite sides of the split — see the constants.
-// It is deliberately not a boolean, and deliberately has no "recorded" value:
-// this SDK can only speak for clients it built, so the honest answer for
-// anything else is the absence of a claim, not an assurance.
+// The vocabulary distinguishes *how* a record is or is not retained, not just
+// that it is not, because the failures have different blast radii and the Node
+// and Python SDKs sit on opposite sides of the split — see the constants. It is
+// deliberately not a boolean, and deliberately has no "recorded" value: this SDK
+// hands the record to the runtime and cannot itself observe what the runtime
+// then keeps, so the strongest thing it may say for its own client is
+// [AuditSinkForwarded] — and for anyone else's, the absence of a claim.
 //
-// Under ADR 0033 §6, a client declaring anything other than
-// [AuditSinkCallerSupplied] makes SDK-side recording **Planned** (AAASM-5750),
-// never *Observed* — *Observed* requires a durable event attributed to the
-// action, and there is none.
+// **No value here earns ADR 0033 §6 *Observed*.** §6's evidence column requires
+// *a durable event attributed to the action*, and this SDK cannot establish that
+// from its side of the FFI — see [AuditSinkForwarded]. What the disposition
+// reports is where the record was handed, not where it ended up:
+//
+// The gap is tracked as AAASM-5783: until report_event payloads reach the live
+// stream and the durable entry, no SDK can claim *Observed*. Revisit these terms
+// when it lands — not before.
+//
+//   - [AuditSinkForwarded] — the record crosses the native boundary to the
+//     runtime. A handoff, not an arrival, and not evidence.
+//   - [AuditSinkDiscarded] — the record is built and dropped, because the client
+//     holds no event channel: *Unsupported* for that configuration.
+//   - [AuditSinkAbsent] — no record is attempted, because no governance client
+//     was resolved. The control is configured and unavailable: *Degraded*.
+//   - [AuditSinkCallerSupplied] — no claim; whatever the caller's client earns.
 type AuditSinkDisposition string
 
 const (
+	// AuditSinkForwarded means the record crosses the native FFI event channel to
+	// the runtime, on the same session and by the same primitive
+	// (ffi.Client.SendEvent) that already carries the boot "register" event
+	// (AAASM-5750).
+	//
+	// **The handoff is the whole of the claim, and it is weaker than it looks.**
+	// It says "forwarded", not "recorded", because three separate things this SDK
+	// cannot see stand between the send and any durable evidence: the send is
+	// fire-and-forget with no acknowledgement, the record is dispatched on a
+	// goroutine nothing joins (see [AssemblyTool.recordOutcome]), and what the
+	// runtime and gateway retain is theirs to state. Do not read *Observed* off
+	// this value — that needs a durable event attributed to the action, which is
+	// not established here.
+	//
+	// **Not reachable from a released artifact.** The native binding is compiled
+	// only under `-tags aa_ffi_go` with cgo; the default build selects the
+	// fallback, whose sendEvent returns statusRuntimeUnavailable even against a
+	// live listener, and `libaa_ffi_go` is not published anywhere (see
+	// docs/quick-start.md). So today this value is reachable only from a
+	// custom-built binary.
+	AuditSinkForwarded AuditSinkDisposition = "forwarded"
+
 	// AuditSinkDiscarded means the record is built and handed to the client,
-	// which drops it. The call site is correct and the sink is not: swapping in
-	// a retaining client is all that is missing. This is what
-	// [GovernanceClient.RecordResult] does on the only client this SDK ships,
-	// and it matches what `node-sdk` declares for its two shipped clients.
+	// which drops it, because that client holds no event channel to send it on.
+	//
+	// **It has no production population in this SDK.** newFFIGovernanceClient is
+	// unexported and boot only ever calls it with the connected *ffi.Client, so
+	// the only way to reach this value is a test double that implements
+	// QueryPolicy and not SendEvent. It is kept because the disposition is
+	// computed rather than fixed, and a computed value that cannot report the
+	// negative case is not a measurement — but no released configuration
+	// produces it.
 	AuditSinkDiscarded AuditSinkDisposition = "discarded"
 
 	// AuditSinkAbsent means no record is even attempted — there is no sink to
 	// offer it to. Strictly worse than [AuditSinkDiscarded]: nothing constructs
 	// the event, so wiring a sink is not sufficient on its own. In this SDK it
 	// is the no-runtime path, where the governance client is nil and the tool
-	// wrapper has nothing to call; `python-sdk` is in this state on every path
-	// because its adapters' audit hook does not resolve at all (AAASM-5731).
+	// wrapper has nothing to call.
 	AuditSinkAbsent AuditSinkDisposition = "absent"
 
 	// AuditSinkCallerSupplied means the client did not come from this SDK, so
 	// this SDK makes no claim either way. It is the **absence of a claim, not an
-	// assurance** that the record is retained — an *Observed* claim for the hook
-	// layer is available only on this branch, and only if the caller's own
-	// client actually retains what it is given.
+	// assurance** that the record is retained — whichever §6 term the caller's
+	// own client earns is the caller's to establish, not this SDK's to assert.
 	AuditSinkCallerSupplied AuditSinkDisposition = "caller-supplied"
 )
 

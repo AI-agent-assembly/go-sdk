@@ -96,23 +96,23 @@ func TestRecordingClientExposesBothBoundaryChannels(t *testing.T) {
 
 	// The query channel records the arguments, which is what makes it usable as
 	// the positive control for an audit measurement.
-	if len(*crossings.Queries) != 1 {
-		t.Fatalf("Queries = %d, want 1", len(*crossings.Queries))
+	if len(crossings.Queries()) != 1 {
+		t.Fatalf("Queries = %d, want 1", len(crossings.Queries()))
 	}
-	query := (*crossings.Queries)[0]
+	query := crossings.Queries()[0]
 	if query.AgentID != "agent-1" || query.ActionType != "tool_call" ||
 		query.ToolName != "web_search" || query.ArgsJSON != `{"q":"x"}` {
 		t.Errorf("recorded query = %+v, want the arguments passed to QueryPolicy", query)
 	}
 
 	// The event channel is separate, and empty until something sends.
-	if len(*crossings.Events) != 0 {
-		t.Fatalf("Events = %v, want empty before any SendEvent", *crossings.Events)
+	if len(crossings.Events()) != 0 {
+		t.Fatalf("Events = %v, want empty before any SendEvent", crossings.Events())
 	}
 	if err := client.SendEvent("register", `{"event_type":"register"}`); err != nil {
 		t.Fatalf("SendEvent failed: %v", err)
 	}
-	if len(*crossings.Events) != 1 || (*crossings.Events)[0] != `{"event_type":"register"}` {
-		t.Fatalf("Events = %v, want the one payload sent", *crossings.Events)
+	if len(crossings.Events()) != 1 || crossings.Events()[0] != `{"event_type":"register"}` {
+		t.Fatalf("Events = %v, want the one payload sent", crossings.Events())
 	}
 }
