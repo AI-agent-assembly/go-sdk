@@ -82,6 +82,7 @@ package main
 
 import (
     "context"
+    "errors"
     "log"
 
     "github.com/ai-agent-assembly/go-sdk/assembly"
@@ -96,16 +97,22 @@ func main() {
         assembly.WithGatewayURL("https://gateway.example.com"),
         assembly.WithAPIKey("..."), // optional — omit for local, unauthenticated dev
     )
-    if err != nil {
+    switch {
+    case errors.Is(err, assembly.ErrSidecarUnavailable):
+        // Expected on the default pure-Go build: it links no native transport,
+        // so boot reaches no runtime. Step 3 shows what still applies.
+        log.Println("init:", err)
+    case err != nil:
         log.Fatalf("init assembly runtime: %v", err)
+    default:
+        defer func() {
+            if err := a.Close(); err != nil {
+                log.Printf("close assembly runtime: %v", err)
+            }
+        }()
     }
-    defer func() {
-        if err := a.Close(); err != nil {
-            log.Printf("close assembly runtime: %v", err)
-        }
-    }()
 
-    log.Println("assembly runtime ready")
+    log.Println("step 2 complete")
 }
 ```
 
@@ -208,6 +215,7 @@ package main
 
 import (
     "context"
+    "errors"
     "log"
 
     "github.com/ai-agent-assembly/go-sdk/assembly"
@@ -216,11 +224,31 @@ import (
 // echoTool is a minimal Tool implementation.
 type echoTool struct{}
 
-func (echoTool) Name() string       { return "echo" }
+func (echoTool) Name() string        { return "echo" }
 func (echoTool) Description() string { return "returns its input unchanged" }
 func (echoTool) Call(_ context.Context, input string) (string, error) {
     return input, nil
 }
+
+// localPolicy is an in-process GovernanceClient, so this program runs with no
+// gateway. Swap it for a gateway-backed client — the WrapTools call below and
+// your tool code do not change.
+type localPolicy struct{}
+
+func (localPolicy) Check(_ context.Context, req assembly.CheckRequest) (assembly.Decision, error) {
+    if req.ToolName != "echo" {
+        return assembly.Decision{Denied: true, Reason: "only echo is allowed here"}, nil
+    }
+    return assembly.Decision{Reason: "allowed by the in-process stand-in"}, nil
+}
+
+func (localPolicy) WaitForApproval(_ context.Context, _ assembly.ApprovalRequest) (assembly.Decision, error) {
+    return assembly.Decision{}, nil
+}
+
+func (localPolicy) RecordResult(_ context.Context, _ assembly.RecordRequest) error { return nil }
+
+func (localPolicy) Close() error { return nil }
 
 func main() {
     ctx := assembly.WithAgentID(context.Background(), "my-agent")
@@ -229,13 +257,17 @@ func main() {
         assembly.WithGatewayURL("https://gateway.example.com"),
         assembly.WithAPIKey("..."),
     )
-    if err != nil {
+    switch {
+    case errors.Is(err, assembly.ErrSidecarUnavailable):
+        log.Println("init:", err)
+    case err != nil:
         log.Fatalf("init: %v", err)
+    default:
+        defer func() { _ = a.Close() }()
     }
-    defer a.Close()
 
     tools := []assembly.Tool{echoTool{}}
-    governed := assembly.WrapTools(tools, nil)
+    governed := assembly.WrapTools(tools, localPolicy{})
 
     out, err := governed[0].Call(ctx, "hello, governance")
     if err != nil {
