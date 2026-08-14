@@ -190,7 +190,9 @@ func (c *ffiGovernanceClient) WaitForApproval(ctx context.Context, _ ApprovalReq
 // **Handing the record over is as far as this method's claim goes.** It does not
 // establish ADR 0033 §6 *Observed*: SendEvent is unacknowledged, so a nil return
 // means "written to the channel", not "received", and certainly not "retained".
-// See [AuditSinkForwarded] for the rest of what stands in the way.
+// See [AuditSinkForwarded] for the rest of what stands in the way, and
+// AAASM-5783 for the downstream work that would have to land before any of this
+// could support an *Observed* claim.
 //
 // The transport error is returned rather than swallowed, so a caller that wants
 // to know can. It is *not* allowed to change an enforcement outcome: the sole

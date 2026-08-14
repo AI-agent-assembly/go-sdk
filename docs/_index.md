@@ -29,6 +29,11 @@ reported back; the dispatch runs on a goroutine nothing joins, so the
 `-tags aa_ffi_go`, which no published artifact ships — so on a default build
 there is no channel at all.
 
+Downstream of the handoff the picture is no better, and it is tracked rather than
+solved: [AAASM-5783](https://lightning-dust-mite.atlassian.net/browse/AAASM-5783)
+is open on `report_event` payloads reaching neither the live stream nor the
+durable entry. Until it lands, no SDK can claim ADR 0033 §6 *Observed*.
+
 `Init` warns when no record can be sent, and `Assembly.AuditSink()` reports which
 case a run is in
 ([AAASM-5750](https://lightning-dust-mite.atlassian.net/browse/AAASM-5750)).

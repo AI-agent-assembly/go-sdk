@@ -148,6 +148,9 @@ writes that record to the runtime's native event channel, which is a handoff and
 not an audit guarantee. The send is unacknowledged, and because the dispatch is
 never joined, a `defer a.Close()` immediately after a call loses the record every
 time (inspect `Assembly.AuditSink()` to tell which run you are in, AAASM-5750).
+Downstream of the handoff, [AAASM-5783](https://lightning-dust-mite.atlassian.net/browse/AAASM-5783)
+is open on `report_event` payloads reaching neither the live stream nor the durable
+entry, so no SDK can claim ADR 0033 §6 *Observed* until it lands.
 
 ### Govern your first agent
 

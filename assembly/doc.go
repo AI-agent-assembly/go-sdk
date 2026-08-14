@@ -9,7 +9,8 @@
 // [GovernanceClient.RecordResult], and the client this SDK ships hands it to the
 // runtime over the native event channel — a handoff, not a retention guarantee:
 // the send is unacknowledged and the dispatch is not joined before shutdown, so
-// this SDK cannot tell you the record survived, and does not claim it did. With
+// this SDK cannot tell you the record survived, and does not claim it did. What
+// happens downstream of the handoff is tracked as AAASM-5783 and is unfixed. With
 // no runtime connected there is no channel at all and the call produces no audit
 // evidence. Enforcement is unaffected either way. [Init] warns in that case and
 // [Assembly.AuditSink] reports which case a run is in — see

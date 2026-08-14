@@ -24,6 +24,10 @@ package assembly
 // from its side of the FFI — see [AuditSinkForwarded]. What the disposition
 // reports is where the record was handed, not where it ended up:
 //
+// The gap is tracked as AAASM-5783: until report_event payloads reach the live
+// stream and the durable entry, no SDK can claim *Observed*. Revisit these terms
+// when it lands — not before.
+//
 //   - [AuditSinkForwarded] — the record crosses the native boundary to the
 //     runtime. A handoff, not an arrival, and not evidence.
 //   - [AuditSinkDiscarded] — the record is built and dropped, because the client

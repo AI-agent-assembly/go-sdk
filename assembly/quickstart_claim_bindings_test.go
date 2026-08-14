@@ -242,6 +242,21 @@ var quickStartClaimBindings = []claimBinding{
 		},
 	},
 	{
+		id: "downstream-of-the-handoff-is-tracked-not-fixed",
+		quote: "Downstream of the handoff, [AAASM-5783](https://lightning-dust-mite.atlassian.net/browse/AAASM-5783) " +
+			"is open on `report_event` payloads reaching neither the live stream nor the durable " +
+			"entry, so no SDK can claim ADR 0033 §6 *Observed* until it lands.",
+		// A statement about work tracked in ANOTHER repository, so no control here
+		// can decide it — the behaviour it describes lives in aa-sdk-client and
+		// aa-runtime, not in this module. Binding it to one of the audit-sink
+		// controls would be the error this file exists to prevent: a control that
+		// measures something adjacent, standing in for a claim it cannot reach.
+		unprovenReason: "AAASM-5783: the payload gap is in aa-sdk-client / aa-runtime, outside this " +
+			"module's test boundary. The sentence is a forward pointer at open work, not a claim " +
+			"about this SDK's behaviour, so it is deliberately unproven here rather than bound to " +
+			"a control that cannot decide it.",
+	},
+	{
 		id: "init-succeeds-once-a-gateway-is-reachable",
 		// RESTORED. Revision 2 dropped this binding when the scan narrowed, so
 		// coverage went DOWN between rounds and the only in-code pointer to
