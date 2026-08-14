@@ -14,7 +14,7 @@ Go SDK for [AI Agent Assembly](https://github.com/ai-agent-assembly) — runtime
 
 The SDK initialises in a few lines, propagates agent identity through `context.Context`, wraps your agent's tool slice with policy enforcement, and forwards every policy check to the AAASM gateway over gRPC or HTTP.
 
-> **The result record depends on a connected runtime.** The wrapper offers the outcome of every governed call — allowed or denied — to the `GovernanceClient`'s `RecordResult`, and the client this SDK ships forwards it to the runtime over the native event channel, the same one the boot registration event uses. Without a reachable runtime there is no channel to send on and no audit evidence is produced. Enforcement is unaffected either way — a policy DENY still blocks the tool. `Init` warns when no record can be sent, and `Assembly.AuditSink()` reports which case you are in: `forwarded`, or `discarded` / `absent` ([AAASM-5750](https://lightning-dust-mite.atlassian.net/browse/AAASM-5750)).
+> **The result record is handed to the runtime, and that is all this SDK can tell you.** The wrapper offers the outcome of every governed call — allowed or denied — to the `GovernanceClient`'s `RecordResult`, and the client this SDK ships writes it to the native event channel, the same one the boot registration event uses. That is a handoff, **not an audit guarantee**: the send is unacknowledged, the dispatch is not joined before shutdown (a `defer a.Close()` after a call loses the record deterministically), and the native binding is only compiled under `-tags aa_ffi_go` — so on a default build there is no channel at all and no audit evidence is produced. Enforcement is unaffected either way: a policy DENY still blocks the tool. `Init` warns when no record can be sent, and `Assembly.AuditSink()` reports which case you are in ([AAASM-5750](https://lightning-dust-mite.atlassian.net/browse/AAASM-5750)).
 
 ## Project status
 
@@ -122,7 +122,7 @@ if err != nil {
 defer a.Close()
 ```
 
-`WithAgentID` attaches the calling agent's identity to `ctx`; the SDK stamps it (and any `WithTraceID` / `WithRunID` values) onto every `Check` and `RecordResult`. The `Check` carries them to the gateway, and the `RecordResult` reaches the runtime's audit pipeline when one is connected (see the note at the top). See [Context Propagation](#context-propagation) below for the full set of context helpers.
+`WithAgentID` attaches the calling agent's identity to `ctx`; the SDK stamps it (and any `WithTraceID` / `WithRunID` values) onto every `Check` and `RecordResult`. The `Check` carries them to the gateway, and the `RecordResult` is written to the runtime's event channel when one is connected — a handoff, not retained evidence (see the note at the top). See [Context Propagation](#context-propagation) below for the full set of context helpers.
 
 Then wrap your agent's tools so every call is governed:
 

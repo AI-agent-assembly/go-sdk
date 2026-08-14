@@ -15,21 +15,23 @@ initialise the runtime once, wrap your tool slice, and from then on every tool
 call is checked against your gateway's policy *before* it runs, and its outcome
 is offered to the governance client *after* it finishes.
 
-{{< callout type="info" >}}
-**Audit evidence depends on a connected runtime.** The wrapper offers the outcome
-of every governed call — allowed or denied — to `GovernanceClient.RecordResult`.
-The client this SDK ships forwards it to the runtime over the native event
-channel, the same channel the boot registration event uses, so the record reaches
-the runtime's audit pipeline rather than stopping in your process.
+{{< callout type="warning" >}}
+**The SDK hands the record to the runtime; it does not give you an audit trail.**
+The wrapper offers the outcome of every governed call — allowed or denied — to
+`GovernanceClient.RecordResult`, and the client this SDK ships writes it to the
+native event channel, the same one the boot registration event uses.
 
-When no runtime is reachable there is no channel to send on and no record is
-produced. That case is not silent: `Init` warns, and `Assembly.AuditSink()`
-reports which of the two a given run is in — `forwarded` when records are being
-sent, `discarded` or `absent` when they are not
+Three things stand between that and evidence you could cite, and none of them is
+under this SDK's control: the send is **unacknowledged**, so arrival is never
+reported back; the dispatch runs on a goroutine nothing joins, so the
+`defer a.Close()` this guide recommends **loses the record deterministically**
+(measured: 200 of 200); and the native binding is compiled only under
+`-tags aa_ffi_go`, which no published artifact ships — so on a default build
+there is no channel at all.
+
+`Init` warns when no record can be sent, and `Assembly.AuditSink()` reports which
+case a run is in
 ([AAASM-5750](https://lightning-dust-mite.atlassian.net/browse/AAASM-5750)).
-Delivery is best-effort in either case: the record is dispatched asynchronously
-so a slow sink cannot delay a tool call, which means one in flight at process
-exit can be lost.
 {{< /callout >}}
 
 It is written in idiomatic Go: functional options, context-first APIs, typed
@@ -46,9 +48,9 @@ Concretely, the SDK is two things working together:
   development, auto-discovers and starts a gateway for you.
 - **An in-process interception shim.** `WrapTools` decorates your existing
   `Tool` values so each `Call` runs a policy `Check` first and offers the outcome
-  to `RecordResult` after (which the shipped client forwards to a connected
-  runtime — see above). Your agent code keeps calling tools the way it always
-  did; the wrapper does the governance.
+  to `RecordResult` after (which the shipped client hands to a connected runtime
+  — see above). Your agent code keeps calling tools the way it always did; the
+  wrapper does the governance.
 
 For the platform as a whole — what the gateway is, how policy and budgets are
 authored, and how the three interception layers fit together — see the
@@ -59,8 +61,8 @@ and the shared [docs hub](https://docs.agent-assembly.com/).
 
 - **Go developers** building or operating AI agents who need allow/deny, budget,
   and topology governance over what their agents can do — and want to add it as a
-  library, not a rewrite. Note that audit evidence from this SDK layer depends
-  on a reachable runtime (see above).
+  library, not a rewrite. Note that this SDK layer does not deliver an audit
+  trail (see above).
 - **Platform teams** standardising agent governance across services: the same
   gateway and policy back several languages (there are sibling
   [Python](https://docs.agent-assembly.com/python-sdk/) and
