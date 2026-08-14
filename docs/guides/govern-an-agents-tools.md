@@ -170,7 +170,7 @@ func main() {
     if err != nil {
         log.Fatalf("tool call: %v", err)
     }
-    fmt.Println(out) // results for: latest go release
+    fmt.Println(out) // result: results for: latest go release
 }
 ```
 
