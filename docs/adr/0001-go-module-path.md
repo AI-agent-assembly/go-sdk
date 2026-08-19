@@ -159,7 +159,7 @@ The code-level migration to Option B is already on `master`; remaining work is
 verification and guarding against regression — to be done under **separate tickets**,
 not this ADR PR (this PR records the decision only):
 
-1. **Verify (no code change here):** confirm `go.mod` `module` directive, all
+1. **Verify (no source change here):** confirm `go.mod` `module` directive, all
    `*.go` import paths, `README.md`, and `docs/` consistently use
    `github.com/ai-agent-assembly/go-sdk`. (Confirmed at time of writing.)
 2. **Release tooling** — ensure `.goreleaser.yaml` and release tagging reference the

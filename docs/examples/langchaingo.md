@@ -12,7 +12,7 @@ LangChainGo tool**, so adding governance is drop-in — no adapter required.
 ## What this example demonstrates
 
 - Defining tools that implement LangChainGo's `tools.Tool` interface.
-- Wrapping those tools with `assembly.WrapTools` so every tool call is checked
+- Wrapping those tools with `assembly.WrapTools` so each tool call is checked
   against a policy before it runs.
 - That a governed tool still satisfies `tools.Tool` — the interfaces share the
   same shape (`Name`, `Description`, `Call`).

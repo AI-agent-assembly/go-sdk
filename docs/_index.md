@@ -11,7 +11,7 @@ allowed to take. It is the Go on-ramp to that control.
 
 The **Go SDK for AI Agent Assembly** lets you put a governance checkpoint in
 front of the tools your AI agent calls — without rewriting the agent. You
-initialise the runtime once, wrap your tool slice, and from then on every tool
+initialise the runtime once, wrap your tool slice, and from then on each tool
 call is checked against your gateway's policy *before* it runs, and its outcome
 is offered to the governance client *after* it finishes.
 
