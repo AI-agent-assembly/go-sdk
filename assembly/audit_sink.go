@@ -31,9 +31,16 @@ package assembly
 //   - [AuditSinkForwarded] — the record crosses the native boundary to the
 //     runtime. A handoff, not an arrival, and not evidence.
 //   - [AuditSinkDiscarded] — the record is built and dropped, because the client
-//     holds no event channel: *Unsupported* for that configuration.
+//     holds no event channel. The **action** is §6 *Unmeasured*: no durable event
+//     attributed to it exists. "No sink in this configuration" is an availability
+//     statement about the capability — a different question, which ADR 0034 §2.5
+//     makes incomparable with the action term rather than a stronger form of it.
 //   - [AuditSinkAbsent] — no record is attempted, because no governance client
-//     was resolved. The control is configured and unavailable: *Degraded*.
+//     was resolved. The action is *Unmeasured* for the same reason, more plainly.
+//     Not *Degraded*: §6 evidences that term with a LayerDegradation event or an
+//     ADR 0030 Degraded state carrying both the planned and the achieved level
+//     (manifest row G6 is what earns it), and this SDK emits neither. A stderr
+//     warning is not that pair.
 //   - [AuditSinkCallerSupplied] — no claim; whatever the caller's client earns.
 type AuditSinkDisposition string
 
